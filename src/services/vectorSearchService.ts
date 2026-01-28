@@ -544,12 +544,15 @@ async function generateEmbedding(text: string): Promise<number[]> {
     }
 
     // Validate dimensions match expected (mainly for fetch APIs)
-    validateEmbeddingDimensions(embedding, config.embeddingModel, config.baseURL);
+    if (!validateEmbeddingDimensions(embedding, config.embeddingModel, config.baseURL)) {
+      return generateFallbackEmbedding(text);
+    }
 
     console.log(
       `✅ Embedding generated: ${embedding.length} dimensions ` +
-        `for model "${config.embeddingModel}".`,
+      `for model "${config.embeddingModel}".`,
     );
+
     return embedding;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
