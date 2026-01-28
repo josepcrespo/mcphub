@@ -3,6 +3,7 @@ import { VectorEmbeddingRepository } from '../db/repositories/index.js';
 import { Tool } from '../types/index.js';
 import { getAppDataSource, isDatabaseConnected, initializeDatabase } from '../db/connection.js';
 import { getSmartRoutingConfig } from '../utils/smartRouting.js';
+import { maskString } from '../utils/maskedString.js';
 import OpenAI from 'openai';
 
 // Get OpenAI configuration from smartRouting settings or fallback to environment variables
@@ -515,7 +516,14 @@ async function callEmbeddingAPI(
  */
 async function generateEmbedding(text: string): Promise<number[]> {
   const config = await getOpenAIConfig();
-  console.log('Current embedding configuration:', JSON.stringify(config, null, 2));
+  const maskedApiKey = config.apiKey ? maskString(config.apiKey) : 'none';
+  console.log(
+    'Current embedding configuration:',
+    JSON.stringify({
+      ...config,
+      apiKey: maskedApiKey
+    }, null, 2)
+  );
 
   // Remove new line characters from text (if any) and, replace them with spaces
   const cleanedText = text.replace(/\n+/g, ' ');
