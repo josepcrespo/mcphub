@@ -465,12 +465,21 @@ async function callEmbeddingAPI(
       }
 
       const rawResponse = await response.json();
-      const rawResponseCopy = structuredClone(rawResponse);
-      rawResponseCopy.data[0].embedding = rawResponseCopy.data[0]?.embedding?.slice(0, 5) || [];
-      console.log(
-        `Raw API response (first 5 values of the vector embedding array):\n` +
+      if (
+        rawResponse &&
+        typeof rawResponse === 'object' &&
+        'data' in rawResponse &&
+        Array.isArray((rawResponse as any).data) &&
+        (rawResponse as any)?.data?.length > 0
+      ) {
+        const rawResponseCopy = structuredClone(rawResponse);
+        (rawResponseCopy as any).data[0].embedding =
+          (rawResponseCopy as any).data[0]?.embedding?.slice(0, 5) || [];
+        console.log(
+          `Raw API response (first 5 values of the vector embedding array):\n` +
           `${JSON.stringify(rawResponseCopy, null, 2)}`,
-      );
+        );
+      }
       return extractEmbeddingFromResponse(rawResponse, 'Direct fetch API') as number[] | null;
     }
   } catch (error) {
