@@ -9,14 +9,15 @@ import OpenAI from 'openai';
 const getOpenAIConfig = async () => {
   const smartRoutingConfig = await getSmartRoutingConfig();
 
-  // Normalize base URL to avoid issues with the ending trailing slash
-  smartRoutingConfig.openaiApiBaseUrl = smartRoutingConfig.openaiApiBaseUrl.endsWith('/')
+  // Normalize base URL to avoid issues with the ending trailing slash,
+  // without mutating the original config object.
+  const baseURL = smartRoutingConfig.openaiApiBaseUrl.endsWith('/')
     ? smartRoutingConfig.openaiApiBaseUrl.slice(0, -1)
     : smartRoutingConfig.openaiApiBaseUrl;
-
+  
   return {
     apiKey: smartRoutingConfig.openaiApiKey,
-    baseURL: smartRoutingConfig.openaiApiBaseUrl,
+    baseURL,
     embeddingModel: smartRoutingConfig.openaiApiEmbeddingModel,
   };
 };
