@@ -2,9 +2,10 @@ import { getRepositoryFactory } from '../db/index.js';
 import { VectorEmbeddingRepository } from '../db/repositories/index.js';
 import { Tool } from '../types/index.js';
 import { getAppDataSource, isDatabaseConnected, initializeDatabase } from '../db/connection.js';
-import { getSmartRoutingConfig } from '../utils/smartRouting.js';
+import { getSmartRoutingConfig, type SmartRoutingConfig } from '../utils/smartRouting.js';
 import { maskString } from '../utils/maskedString.js';
 import OpenAI from 'openai';
+import axios from 'axios';
 
 // Get OpenAI configuration from smartRouting settings or fallback to environment variables
 const getOpenAIConfig = async () => {
@@ -21,6 +22,59 @@ const getOpenAIConfig = async () => {
     baseURL,
     embeddingModel: smartRoutingConfig.openaiApiEmbeddingModel,
   };
+};
+
+const getAzureOpenAIConfig = (smartRoutingConfig: SmartRoutingConfig) => {
+  return {
+    endpoint: smartRoutingConfig.azureOpenaiEndpoint,
+    apiKey: smartRoutingConfig.azureOpenaiApiKey,
+    apiVersion: smartRoutingConfig.azureOpenaiApiVersion,
+    embeddingDeployment: smartRoutingConfig.azureOpenaiEmbeddingDeployment,
+  };
+};
+
+const generateAzureOpenAIEmbedding = async (
+  text: string,
+  smartRoutingConfig: SmartRoutingConfig,
+): Promise<number[]> => {
+  const azureConfig = getAzureOpenAIConfig(smartRoutingConfig);
+
+  if (!azureConfig.endpoint || !azureConfig.apiKey) {
+    throw new Error('Azure OpenAI endpoint/apiKey is not configured');
+  }
+
+  if (!azureConfig.apiVersion) {
+    throw new Error('Azure OpenAI apiVersion is not configured');
+  }
+
+  if (!azureConfig.embeddingDeployment) {
+    throw new Error('Azure OpenAI embedding deployment is not configured');
+  }
+
+  const endpoint = azureConfig.endpoint.replace(/\/+$/, '');
+  const url = `${endpoint}/openai/deployments/${encodeURIComponent(
+    azureConfig.embeddingDeployment,
+  )}/embeddings?api-version=${encodeURIComponent(azureConfig.apiVersion)}`;
+
+  const response = await axios.post(
+    url,
+    {
+      input: text,
+    },
+    {
+      headers: {
+        'api-key': azureConfig.apiKey,
+        'Content-Type': 'application/json',
+      },
+    },
+  );
+
+  const embedding = response?.data?.data?.[0]?.embedding;
+  if (!Array.isArray(embedding)) {
+    throw new Error('Azure embeddings response missing embedding data');
+  }
+
+  return embedding;
 };
 
 // Constants for embedding models
@@ -515,6 +569,33 @@ async function callEmbeddingAPI(
  * @throws Never throws - always returns a valid embedding or fallback
  */
 async function generateEmbedding(text: string): Promise<number[]> {
+  const smartRoutingConfig = await getSmartRoutingConfig();
+  const provider = smartRoutingConfig.embeddingProvider || 'openai';
+
+  if (provider === 'azure_openai') {
+    const azureConfig = getAzureOpenAIConfig(smartRoutingConfig);
+
+    if (!azureConfig.endpoint || !azureConfig.apiKey) {
+      console.warn('Azure OpenAI endpoint/key not configured. Using fallback embedding method.');
+      return generateFallbackEmbedding(text);
+    }
+
+    try {
+      return await generateAzureOpenAIEmbedding(text, smartRoutingConfig);
+    } catch (error: any) {
+      const status = error?.response?.status;
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(
+        `Azure OpenAI embeddings request failed (status=${status ?? 'unknown'}). Falling back to local embeddings.`,
+      );
+      console.warn(
+        `Azure embedding config: endpoint=${azureConfig.endpoint || 'missing'}, deployment=${azureConfig.embeddingDeployment || 'missing'}, apiVersion=${azureConfig.apiVersion || 'missing'}`,
+      );
+      console.warn(`Embedding error: ${message}`);
+      return generateFallbackEmbedding(text);
+    }
+  }
+
   const config = await getOpenAIConfig();
   const maskedApiKey = config.apiKey ? maskString(config.apiKey) : 'none';
   console.log(
