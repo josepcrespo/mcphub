@@ -16,7 +16,6 @@ import {
 import { getRepositoryFactory } from '../../src/db/index.js';
 import { getAppDataSource, isDatabaseConnected, initializeDatabase } from '../../src/db/connection.js';
 import { getSmartRoutingConfig } from '../../src/utils/smartRouting.js';
-import OpenAI from 'openai';
 import { Tool } from '../../src/types/index.js';
 
 describe('Vector Search Service', () => {

@@ -24,7 +24,6 @@ jest.mock('../../src/services/mcpService.js');
 import {
   saveToolsAsVectorEmbeddings,
   searchToolsByVector,
-  getAllVectorizedTools,
   removeServerToolEmbeddings,
 } from '../../src/services/vectorSearchService.js';
 import { getRepositoryFactory } from '../../src/db/index.js';
