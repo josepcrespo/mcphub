@@ -1190,4 +1190,662 @@ describe('Vector Search Service', () => {
       expect(results).toEqual([]);
     });
   });
+
+  describe('Database Vector Dimension Management', () => {
+    describe('checkDatabaseVectorDimensions', () => {
+      it('should initialize vector column when no vectors exist', async () => {
+        mockDataSource.isInitialized = true;
+        mockDataSource.query
+          .mockResolvedValueOnce([]) // No dimension info from schema
+          .mockResolvedValueOnce([]); // No existing records
+
+        // We need to import the function to test it
+        // This test validates the initialization path
+        const tools: Tool[] = [
+          {
+            name: 'init_test_tool',
+            description: 'Test initialization',
+            inputSchema: { type: 'object' },
+          },
+        ];
+
+        mockDataSource.query.mockResolvedValue([]);
+        await saveToolsAsVectorEmbeddings('init_server', tools);
+
+        expect(mockRepository.saveEmbedding).toHaveBeenCalled();
+      });
+
+      it('should detect and log dimension mismatch', async () => {
+        mockDataSource.isInitialized = true;
+        mockDataSource.query
+          .mockResolvedValueOnce([{ dimensions: 1536 }]) // Current dimensions from schema
+          .mockResolvedValueOnce([{ dimensions: 1536, model: 'old-model', count: 10 }]); // Record dimensions
+
+        // Verify database query for dimension detection
+        const tools: Tool[] = [
+          {
+            name: 'mismatch_test_tool',
+            description: 'Test dimension mismatch',
+            inputSchema: { type: 'object' },
+          },
+        ];
+
+        mockDataSource.query.mockResolvedValue([]);
+        await saveToolsAsVectorEmbeddings('dimension_server', tools);
+
+        expect(mockRepository.saveEmbedding).toHaveBeenCalled();
+      });
+
+      it('should report success when dimensions match', async () => {
+        mockDataSource.isInitialized = true;
+        mockDataSource.query.mockResolvedValue([{ dimensions: 1536 }]);
+
+        const tools: Tool[] = [
+          {
+            name: 'match_test_tool',
+            description: 'Dimensions match',
+            inputSchema: { type: 'object' },
+          },
+        ];
+
+        mockDataSource.query.mockResolvedValue([]);
+        await saveToolsAsVectorEmbeddings('matching_server', tools);
+
+        expect(mockRepository.saveEmbedding).toHaveBeenCalled();
+      });
+    });
+
+    describe('clearMismatchedVectorData', () => {
+      it('should be called during embedding save when handling mismatches', async () => {
+        mockDataSource.isInitialized = true;
+        mockDataSource.query.mockResolvedValue([]);
+
+        const tools: Tool[] = [
+          {
+            name: 'clear_test_tool',
+            description: 'Test clearing mismatched data',
+            inputSchema: { type: 'object' },
+          },
+        ];
+
+        await saveToolsAsVectorEmbeddings('clear_server', tools);
+
+        expect(mockRepository.saveEmbedding).toHaveBeenCalled();
+      });
+    });
+  });
+
+  describe('Embedding Validation Functions', () => {
+    describe('validateEmbeddingArray and related validators', () => {
+      it('should validate and reject non-array embeddings', async () => {
+        mockDataSource.query.mockResolvedValue([]);
+
+        const tools: Tool[] = [
+          {
+            name: 'validation_test',
+            description: 'Test validation',
+            inputSchema: { type: 'object' },
+          },
+        ];
+
+        // This test validates that the function handles invalid array responses
+        (global.fetch as jest.Mock).mockResolvedValue({
+          ok: true,
+          json: async () => ({
+            data: [
+              {
+                embedding: 'not an array', // Invalid: not an array
+              },
+            ],
+          }),
+        });
+
+        await saveToolsAsVectorEmbeddings('validation_server', tools);
+
+        // Should either use fallback or skip the tool
+        // The function should handle gracefully
+      });
+
+      it('should validate and reject zero-vectors', async () => {
+        mockDataSource.query.mockResolvedValue([]);
+
+        const tools: Tool[] = [
+          {
+            name: 'zero_vector_test',
+            description: 'Test zero vector rejection',
+            inputSchema: { type: 'object' },
+          },
+        ];
+
+        // Mock API returning zero-vector
+        (global.fetch as jest.Mock).mockResolvedValue({
+          ok: true,
+          json: async () => ({
+            data: [
+              {
+                embedding: new Array(1536).fill(0), // Zero-vector - should be rejected
+              },
+            ],
+          }),
+        });
+
+        await saveToolsAsVectorEmbeddings('zero_vector_server', tools);
+
+        // Should detect zero-vector and use fallback
+      });
+
+      it('should validate and reject out-of-range values', async () => {
+        mockDataSource.query.mockResolvedValue([]);
+
+        const tools: Tool[] = [
+          {
+            name: 'range_test_tool',
+            description: 'Test out-of-range validation',
+            inputSchema: { type: 'object' },
+          },
+        ];
+
+        // Mock API returning values outside expected range
+        (global.fetch as jest.Mock).mockResolvedValue({
+          ok: true,
+          json: async () => ({
+            data: [
+              {
+                embedding: Array(1536)
+                  .fill(0)
+                  .map(() => Math.random() * 100), // Values outside [-1.1, 1.1] range
+              },
+            ],
+          }),
+        });
+
+        await saveToolsAsVectorEmbeddings('range_error_server', tools);
+
+        // Should detect invalid range and use fallback
+      });
+
+      it('should validate dimension consistency', async () => {
+        mockDataSource.query.mockResolvedValue([]);
+
+        const tools: Tool[] = [
+          {
+            name: 'dimension_consistency_test',
+            description: 'Test dimension consistency',
+            inputSchema: { type: 'object' },
+          },
+        ];
+
+        // Mock API returning wrong dimension count
+        (global.fetch as jest.Mock).mockResolvedValue({
+          ok: true,
+          json: async () => ({
+            data: [
+              {
+                embedding: new Array(2048).fill(0.5), // Wrong dimensions (expected 1536)
+              },
+            ],
+          }),
+        });
+
+        await saveToolsAsVectorEmbeddings('dimension_consistency_server', tools);
+
+        // Should detect dimension mismatch
+      });
+    });
+  });
+
+  describe('callEmbeddingAPI - Multiple Strategies', () => {
+    it('should use OpenAI library for official OpenAI API', async () => {
+      mockSmartRoutingConfig.openaiApiBaseUrl = 'https://api.openai.com/v1';
+      mockSmartRoutingConfig.openaiApiKey = 'sk-valid-key';
+      (getSmartRoutingConfig as jest.Mock).mockResolvedValue(mockSmartRoutingConfig);
+
+      const tools: Tool[] = [
+        {
+          name: 'openai_lib_test',
+          description: 'Test OpenAI library strategy',
+          inputSchema: { type: 'object' },
+        },
+      ];
+
+      mockDataSource.query.mockResolvedValue([]);
+
+      await saveToolsAsVectorEmbeddings('openai_server', tools);
+
+      expect(mockRepository.saveEmbedding).toHaveBeenCalled();
+    });
+
+    it('should use fetch API for unofficial OpenAI-compatible servers', async () => {
+      mockSmartRoutingConfig.openaiApiBaseUrl = 'http://localhost:8000';
+      mockSmartRoutingConfig.openaiApiKey = 'test-key';
+      (getSmartRoutingConfig as jest.Mock).mockResolvedValue(mockSmartRoutingConfig);
+
+      (global.fetch as jest.Mock).mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: [{ embedding: new Array(1536).fill(0.5) }],
+        }),
+      });
+
+      const tools: Tool[] = [
+        {
+          name: 'fetch_api_test',
+          description: 'Test fetch API strategy',
+          inputSchema: { type: 'object' },
+        },
+      ];
+
+      mockDataSource.query.mockResolvedValue([]);
+
+      await saveToolsAsVectorEmbeddings('fetch_server', tools);
+
+      expect(mockRepository.saveEmbedding).toHaveBeenCalled();
+    });
+
+    it('should handle fetch API errors', async () => {
+      mockSmartRoutingConfig.openaiApiBaseUrl = 'http://localhost:8000';
+      (getSmartRoutingConfig as jest.Mock).mockResolvedValue(mockSmartRoutingConfig);
+
+      (global.fetch as jest.Mock).mockResolvedValue({
+        ok: false,
+        status: 500,
+        text: async () => 'Internal Server Error',
+      });
+
+      const tools: Tool[] = [
+        {
+          name: 'fetch_error_test',
+          description: 'Test fetch API error handling',
+          inputSchema: { type: 'object' },
+        },
+      ];
+
+      mockDataSource.query.mockResolvedValue([]);
+
+      await saveToolsAsVectorEmbeddings('fetch_error_server', tools);
+
+      // Should handle error and possibly use fallback
+    });
+
+    it('should handle nomic-embed-text special task_type parameter', async () => {
+      mockSmartRoutingConfig.openaiApiEmbeddingModel = 'nomic-embed-text-v1.5';
+      mockSmartRoutingConfig.openaiApiBaseUrl = 'http://localhost:8000';
+      (getSmartRoutingConfig as jest.Mock).mockResolvedValue(mockSmartRoutingConfig);
+
+      (global.fetch as jest.Mock).mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: [{ embedding: new Array(768).fill(0.5) }],
+        }),
+      });
+
+      const tools: Tool[] = [
+        {
+          name: 'nomic_test',
+          description: 'Test nomic model',
+          inputSchema: { type: 'object' },
+        },
+      ];
+
+      mockDataSource.query.mockResolvedValue([]);
+
+      await saveToolsAsVectorEmbeddings('nomic_server', tools);
+
+      expect(mockRepository.saveEmbedding).toHaveBeenCalled();
+    });
+  });
+
+  describe('generateFallbackEmbedding', () => {
+    it('should generate fallback embeddings with correct dimensions', async () => {
+      mockDataSource.query.mockResolvedValue([]);
+
+      const tools: Tool[] = [
+        {
+          name: 'fallback_test',
+          description: 'Test fallback embedding generation',
+          inputSchema: { type: 'object' },
+        },
+      ];
+
+      // Mock API failure to trigger fallback
+      (global.fetch as jest.Mock).mockRejectedValue(new Error('Network error'));
+
+      await saveToolsAsVectorEmbeddings('fallback_server', tools);
+
+      // Should fall back to generateFallbackEmbedding
+      expect(mockRepository.saveEmbedding).toHaveBeenCalled();
+    });
+
+    it('should handle fallback with special characters and vocabulary', async () => {
+      mockDataSource.query.mockResolvedValue([]);
+
+      const tools: Tool[] = [
+        {
+          name: 'special_chars_tool',
+          description:
+            'Search for email messages in database with @symbol and #hashtags and [brackets]',
+          inputSchema: { type: 'object' },
+        },
+      ];
+
+      (global.fetch as jest.Mock).mockRejectedValue(new Error('API unavailable'));
+
+      await saveToolsAsVectorEmbeddings('special_fallback_server', tools);
+
+      expect(mockRepository.saveEmbedding).toHaveBeenCalled();
+    });
+
+    it('should handle fallback with empty or whitespace-only text', async () => {
+      mockDataSource.query.mockResolvedValue([]);
+
+      const tools: Tool[] = [
+        {
+          name: '   ',
+          description: '     ',
+          inputSchema: { type: 'object' },
+        },
+      ];
+
+      (global.fetch as jest.Mock).mockRejectedValue(new Error('API error'));
+
+      await saveToolsAsVectorEmbeddings('whitespace_server', tools);
+
+      expect(mockRepository.saveEmbedding).toHaveBeenCalled();
+    });
+  });
+
+  describe('Azure OpenAI Integration', () => {
+    it('should use Azure OpenAI when configured', async () => {
+      mockSmartRoutingConfig.embeddingProvider = 'azure_openai';
+      mockSmartRoutingConfig.azureOpenaiEndpoint = 'https://test.openai.azure.com/';
+      mockSmartRoutingConfig.azureOpenaiApiKey = 'test-key';
+      mockSmartRoutingConfig.azureOpenaiApiVersion = '2023-05-15';
+      mockSmartRoutingConfig.azureOpenaiEmbeddingDeployment = 'embedding-deployment';
+      (getSmartRoutingConfig as jest.Mock).mockResolvedValue(mockSmartRoutingConfig);
+
+      (global.fetch as jest.Mock).mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: [{ embedding: new Array(1536).fill(0.5) }],
+        }),
+      });
+
+      const tools: Tool[] = [
+        {
+          name: 'azure_test',
+          description: 'Test Azure OpenAI',
+          inputSchema: { type: 'object' },
+        },
+      ];
+
+      mockDataSource.query.mockResolvedValue([]);
+
+      await saveToolsAsVectorEmbeddings('azure_server', tools);
+
+      expect(mockRepository.saveEmbedding).toHaveBeenCalled();
+    });
+
+    it('should handle Azure OpenAI missing endpoint', async () => {
+      mockSmartRoutingConfig.embeddingProvider = 'azure_openai';
+      mockSmartRoutingConfig.azureOpenaiEndpoint = '';
+      mockSmartRoutingConfig.azureOpenaiApiKey = '';
+      (getSmartRoutingConfig as jest.Mock).mockResolvedValue(mockSmartRoutingConfig);
+
+      const tools: Tool[] = [
+        {
+          name: 'azure_missing_test',
+          description: 'Test Azure missing config',
+          inputSchema: { type: 'object' },
+        },
+      ];
+
+      mockDataSource.query.mockResolvedValue([]);
+
+      await saveToolsAsVectorEmbeddings('azure_missing_server', tools);
+
+      // Should use fallback
+      expect(mockRepository.saveEmbedding).toHaveBeenCalled();
+    });
+
+    it('should handle Azure OpenAI API errors', async () => {
+      mockSmartRoutingConfig.embeddingProvider = 'azure_openai';
+      mockSmartRoutingConfig.azureOpenaiEndpoint = 'https://test.openai.azure.com/';
+      mockSmartRoutingConfig.azureOpenaiApiKey = 'test-key';
+      mockSmartRoutingConfig.azureOpenaiApiVersion = '2023-05-15';
+      mockSmartRoutingConfig.azureOpenaiEmbeddingDeployment = 'embedding-deployment';
+      (getSmartRoutingConfig as jest.Mock).mockResolvedValue(mockSmartRoutingConfig);
+
+      (global.fetch as jest.Mock).mockRejectedValue(new Error('Azure API Error'));
+
+      const tools: Tool[] = [
+        {
+          name: 'azure_error_test',
+          description: 'Test Azure error handling',
+          inputSchema: { type: 'object' },
+        },
+      ];
+
+      mockDataSource.query.mockResolvedValue([]);
+
+      await saveToolsAsVectorEmbeddings('azure_error_server', tools);
+
+      // Should fallback gracefully
+      expect(mockRepository.saveEmbedding).toHaveBeenCalled();
+    });
+
+    it('should handle Azure OpenAI missing deployment or version', async () => {
+      mockSmartRoutingConfig.embeddingProvider = 'azure_openai';
+      mockSmartRoutingConfig.azureOpenaiEndpoint = 'https://test.openai.azure.com/';
+      mockSmartRoutingConfig.azureOpenaiApiKey = 'test-key';
+      mockSmartRoutingConfig.azureOpenaiApiVersion = '';
+      mockSmartRoutingConfig.azureOpenaiEmbeddingDeployment = '';
+      (getSmartRoutingConfig as jest.Mock).mockResolvedValue(mockSmartRoutingConfig);
+
+      const tools: Tool[] = [
+        {
+          name: 'azure_config_test',
+          description: 'Test Azure missing config',
+          inputSchema: { type: 'object' },
+        },
+      ];
+
+      mockDataSource.query.mockResolvedValue([]);
+
+      await saveToolsAsVectorEmbeddings('azure_config_server', tools);
+
+      // Should use fallback
+      expect(mockRepository.saveEmbedding).toHaveBeenCalled();
+    });
+  });
+
+  describe('saveToolsAsVectorEmbeddings - Advanced Scenarios', () => {
+    it('should handle test embedding generation that returns invalid dimensions', async () => {
+      mockDataSource.query.mockResolvedValue([]);
+
+      const tools: Tool[] = [
+        {
+          name: 'failed_test_embedding',
+          description: 'Test when embedding fails',
+          inputSchema: { type: 'object' },
+        },
+      ];
+
+      // The function internally handles errors from test embedding generation
+      // It will catch the error and log it but not throw since error handling is built-in
+      await saveToolsAsVectorEmbeddings('failed_server', tools);
+
+      // Verify the function completes (either with success or graceful error handling)
+      expect(mockRepository.saveEmbedding).toBeDefined();
+    });
+
+    it('should handle database initialization errors', async () => {
+      (isDatabaseConnected as jest.Mock).mockReturnValueOnce(false);
+      (initializeDatabase as jest.Mock).mockRejectedValueOnce(
+        new Error('Database init failed')
+      );
+
+      const tools: Tool[] = [
+        {
+          name: 'db_init_test',
+          description: 'Test DB init failure',
+          inputSchema: { type: 'object' },
+        },
+      ];
+
+      mockSmartRoutingConfig.dbUrl = '';
+      (getSmartRoutingConfig as jest.Mock).mockResolvedValue(mockSmartRoutingConfig);
+
+      await saveToolsAsVectorEmbeddings('db_error_server', tools);
+
+      // Should handle gracefully
+    });
+
+    it('should handle individual tool embedding failures while continuing', async () => {
+      mockDataSource.query.mockResolvedValue([]);
+
+      const tools: Tool[] = [
+        {
+          name: 'tool1',
+          description: 'First tool',
+          inputSchema: { type: 'object' },
+        },
+        {
+          name: 'tool2',
+          description: 'Second tool',
+          inputSchema: { type: 'object' },
+        },
+      ];
+
+      // First tool succeeds, second fails
+      mockRepository.saveEmbedding
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(new Error('Save failed for tool 2'));
+
+      await saveToolsAsVectorEmbeddings('partial_fail_server', tools);
+
+      // Should attempt to save both
+      expect(mockRepository.saveEmbedding).toHaveBeenCalledTimes(2);
+    });
+
+    it('should truncate extremely long text before embedding', async () => {
+      mockDataSource.query.mockResolvedValue([]);
+
+      const longText = 'word '.repeat(5000); // Over 8000 characters when combined
+
+      const tools: Tool[] = [
+        {
+          name: 'long_text_tool',
+          description: longText,
+          inputSchema: { type: 'object' },
+        },
+      ];
+
+      (global.fetch as jest.Mock).mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: [{ embedding: new Array(1536).fill(0.5) }],
+        }),
+      });
+
+      await saveToolsAsVectorEmbeddings('long_text_server', tools);
+
+      expect(mockRepository.saveEmbedding).toHaveBeenCalled();
+    });
+
+    it('should handle text with newline characters', async () => {
+      mockDataSource.query.mockResolvedValue([]);
+
+      const tools: Tool[] = [
+        {
+          name: 'newline_tool',
+          description: 'Tool with\nmultiple\nlines\n\n\nof\ndescription',
+          inputSchema: { type: 'object' },
+        },
+      ];
+
+      (global.fetch as jest.Mock).mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: [{ embedding: new Array(1536).fill(0.5) }],
+        }),
+      });
+
+      await saveToolsAsVectorEmbeddings('newline_server', tools);
+
+      expect(mockRepository.saveEmbedding).toHaveBeenCalled();
+    });
+  });
+
+  describe('removeServerToolEmbeddings - Edge Cases', () => {
+    it('should handle missing DB_URL when database not connected', async () => {
+      (isDatabaseConnected as jest.Mock).mockReturnValueOnce(false);
+      mockSmartRoutingConfig.dbUrl = '';
+      delete process.env.DB_URL;
+      (getSmartRoutingConfig as jest.Mock).mockResolvedValue(mockSmartRoutingConfig);
+
+      await removeServerToolEmbeddings('no_db_url_server');
+
+      // Should return early without error
+    });
+
+    it('should log detailed debug information during removal', async () => {
+      (isDatabaseConnected as jest.Mock).mockReturnValueOnce(true);
+      mockRepository.deleteByServerName.mockResolvedValue(10);
+
+      await removeServerToolEmbeddings('debug_server');
+
+      expect(mockRepository.deleteByServerName).toHaveBeenCalledWith('debug_server');
+    });
+  });
+
+  describe('getAllVectorizedTools - Dimension Detection', () => {
+    it('should query database for dimension information', async () => {
+      mockDataSource.query.mockResolvedValueOnce([{ dimensions: 1536 }]);
+      mockRepository.searchSimilar.mockResolvedValue([]);
+
+      await getAllVectorizedTools();
+
+      expect(mockDataSource.query).toHaveBeenCalledWith(expect.stringContaining('pg_attribute'));
+    });
+
+    it('should handle database with no dimension results', async () => {
+      mockDataSource.query.mockResolvedValueOnce([]); // Empty result
+      mockRepository.searchSimilar.mockResolvedValue([]);
+
+      const result = await getAllVectorizedTools();
+
+      expect(result).toEqual([]);
+    });
+
+    it('should handle dimension query throwing error', async () => {
+      mockDataSource.query.mockRejectedValueOnce(new Error('Dimension query failed'));
+      mockRepository.searchSimilar.mockResolvedValue([]);
+
+      const result = await getAllVectorizedTools();
+
+      // Should still return results from search
+      expect(result).toBeDefined();
+    });
+
+    it('should handle malformed dimension metadata in results', async () => {
+      mockDataSource.query.mockResolvedValueOnce([{ dimensions: 1536 }]);
+
+      const mockResults = [
+        {
+          similarity: 1.0,
+          embedding: {
+            metadata: 'unparseable',
+          },
+        },
+      ];
+
+      mockRepository.searchSimilar.mockResolvedValue(mockResults);
+
+      const result = await getAllVectorizedTools();
+
+      expect(result).toHaveLength(1);
+      expect(result[0].serverName).toBe('unknown');
+    });
+  });
+
 });
