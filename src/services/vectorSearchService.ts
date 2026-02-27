@@ -283,6 +283,12 @@ async function generateEmbedding(text: string): Promise<number[]> {
   const smartRoutingConfig = await getSmartRoutingConfig();
   const provider = smartRoutingConfig.embeddingProvider || 'openai';
 
+  // Normalize whitespace before generating the embedding (issue #639):
+  // tool descriptions fetched from MCP servers can contain raw newline characters
+  // and other whitespace that introduce noise into the vector representation,
+  // potentially affecting the quality of semantic search results.
+  text = text.replace(/\s+/g, ' ').trim();
+
   if (provider === 'azure_openai') {
     const azureConfig = getAzureOpenAIConfig(smartRoutingConfig);
 
