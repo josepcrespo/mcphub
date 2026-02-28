@@ -44,6 +44,23 @@ describe('Environment Variable Expansion - Comprehensive Tests', () => {
       process.env.VAR2 = 'value2';
       expect(expandEnvVars('$VAR1-${VAR2}')).toBe('value1-value2');
     });
+
+    it('should trim leading whitespace', () => {
+      expect(expandEnvVars('  hello')).toBe('hello');
+    });
+
+    it('should trim trailing whitespace', () => {
+      expect(expandEnvVars('hello  ')).toBe('hello');
+    });
+
+    it('should return empty string for whitespace-only input', () => {
+      expect(expandEnvVars('   ')).toBe('');
+    });
+
+    it('should trim whitespace from an expanded env var value', () => {
+      process.env.PADDED_VAR = '  padded-value  ';
+      expect(expandEnvVars('${PADDED_VAR}')).toBe('padded-value');
+    });
   });
 
   describe('replaceEnvVars - Recursive expansion', () => {
