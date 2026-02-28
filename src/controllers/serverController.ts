@@ -1162,30 +1162,31 @@ export const updateSystemConfig = async (req: Request, res: Response): Promise<v
         systemConfig.smartRouting.enabled = smartRouting.enabled;
       }
       if (typeof smartRouting.dbUrl === 'string') {
-        systemConfig.smartRouting.dbUrl = smartRouting.dbUrl;
+        systemConfig.smartRouting.dbUrl = smartRouting.dbUrl.trim();
       }
       if (typeof smartRouting.openaiApiBaseUrl === 'string') {
-        systemConfig.smartRouting.openaiApiBaseUrl = smartRouting.openaiApiBaseUrl;
+        systemConfig.smartRouting.openaiApiBaseUrl = smartRouting.openaiApiBaseUrl.trim();
       }
       if (typeof smartRouting.openaiApiKey === 'string') {
-        systemConfig.smartRouting.openaiApiKey = smartRouting.openaiApiKey;
+        systemConfig.smartRouting.openaiApiKey = smartRouting.openaiApiKey.trim();
       }
       if (typeof smartRouting.openaiApiEmbeddingModel === 'string') {
-        systemConfig.smartRouting.openaiApiEmbeddingModel = smartRouting.openaiApiEmbeddingModel;
+        systemConfig.smartRouting.openaiApiEmbeddingModel =
+          smartRouting.openaiApiEmbeddingModel.trim();
       }
 
       if (typeof smartRouting.azureOpenaiEndpoint === 'string') {
-        systemConfig.smartRouting.azureOpenaiEndpoint = smartRouting.azureOpenaiEndpoint;
+        systemConfig.smartRouting.azureOpenaiEndpoint = smartRouting.azureOpenaiEndpoint.trim();
       }
       if (typeof smartRouting.azureOpenaiApiKey === 'string') {
-        systemConfig.smartRouting.azureOpenaiApiKey = smartRouting.azureOpenaiApiKey;
+        systemConfig.smartRouting.azureOpenaiApiKey = smartRouting.azureOpenaiApiKey.trim();
       }
       if (typeof smartRouting.azureOpenaiApiVersion === 'string') {
-        systemConfig.smartRouting.azureOpenaiApiVersion = smartRouting.azureOpenaiApiVersion;
+        systemConfig.smartRouting.azureOpenaiApiVersion = smartRouting.azureOpenaiApiVersion.trim();
       }
       if (typeof smartRouting.azureOpenaiEmbeddingDeployment === 'string') {
         systemConfig.smartRouting.azureOpenaiEmbeddingDeployment =
-          smartRouting.azureOpenaiEmbeddingDeployment;
+          smartRouting.azureOpenaiEmbeddingDeployment.trim();
       }
 
       if (typeof smartRouting.progressiveDisclosure === 'boolean') {

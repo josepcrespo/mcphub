@@ -167,6 +167,11 @@ export function replaceEnvVars(
   return input;
 }
 
+/**
+ * Expand environment variable references and trim leading/trailing whitespace.
+ * Trimming here prevents hard-to-diagnose API failures caused by accidental
+ * whitespace in values at the beginning or end of the string.
+ */
 export const expandEnvVars = (value: string): string => {
   if (typeof value !== 'string') {
     return String(value);
@@ -175,7 +180,7 @@ export const expandEnvVars = (value: string): string => {
   let result = value.replace(/\$\{([^}]+)\}/g, (_, key) => process.env[key] || '');
   // Also replace $VAR format (common on Unix-like systems)
   result = result.replace(/\$([A-Z_][A-Z0-9_]*)/g, (_, key) => process.env[key] || '');
-  return result;
+  return result.trim();
 };
 
 export default defaultConfig;
