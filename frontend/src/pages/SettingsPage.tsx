@@ -1461,7 +1461,7 @@ const SettingsPage: React.FC = () => {
                     }
                     disabled={loading}
                   >
-                    <option value="openai">OpenAI</option>
+                    <option value="openai">OpenAI (or compatible)</option>
                     <option value="azure_openai">Azure OpenAI</option>
                   </select>
                 </div>
