@@ -909,6 +909,21 @@ async function checkDatabaseVectorDimensions(dimensionsNeeded: number): Promise<
         await clearMismatchedVectorData(dimensionsNeeded);
       }
 
+      // Drop any existing index BEFORE altering the column type.
+      // This is required because PostgreSQL attempts to rebuild the index
+      // automatically during ALTER COLUMN, which fails when the new dimensions
+      // exceed the vector type HNSW limit (2000). For example, switching from
+      // 100-dimensional (fallback) to 3072-dimensional (gemini-embedding-001 or
+      // text-embedding-3-large) vectors would trigger error code 54000 from
+      // hnswbuild.c without this pre-emptive drop.
+      try {
+        await getAppDataSource().query(
+          `DROP INDEX IF EXISTS idx_vector_embeddings_embedding;`,
+        );
+      } catch (dropError: any) {
+        console.warn('Could not drop existing vector index before ALTER:', dropError?.message);
+      }
+
       // Alter the column type with the new dimensions
       await getAppDataSource().query(`
         ALTER TABLE vector_embeddings 
