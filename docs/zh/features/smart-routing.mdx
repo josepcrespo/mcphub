@@ -344,7 +344,7 @@ curl http://localhost:3000/api/smart-routing/embedding-stats \
 | `text-embedding-3-small` | 1536 | HNSW | **推荐** - 质量和性能的最佳平衡 |
 | `text-embedding-3-large` | 3072 | HNSW (halfvec) | 更高质量，需要 pgvector ≥ 0.7.0 |
 | `bge-m3` | 1024 | HNSW | 开源替代方案 |
-| `gemini-embedding-001` | 3072 | HNSW (halfvec) | Google Gemini — 免费额度（100 RPM），兼容 OpenAI 接口 |
+| `gemini-embedding-001` | 3072 | HNSW (halfvec) | Google Gemini — 免费额度（100 RPM），兼容 OpenAI 接口，需要 pgvector ≥ 0.7.0 |
 
 <Info>
   **HNSW 是推荐的索引类型**
@@ -361,7 +361,7 @@ curl http://localhost:3000/api/smart-routing/embedding-stats \
   - `vector` 类型：最多 **2,000 维**（HNSW 或 IVFFlat）
   - `halfvec` 类型：最多 **4,000 维**（自动用于高维嵌入）
   
-  对于 `text-embedding-3-large`（3072 维）：
+  对于 3072 维的模型（`text-embedding-3-large`、`gemini-embedding-001`）：
   - 需要 pgvector ≥ 0.7.0 以支持 halfvec
   - MCPHub 自动使用 halfvec 类型转换以获得最佳索引
   - 旧版 pgvector 仍可工作，但没有索引优化
@@ -378,7 +378,7 @@ EMBEDDING_MODEL=text-embedding-3-small
 # 更高质量（需要 pgvector >= 0.7.0 以获得最佳索引）
 EMBEDDING_MODEL=text-embedding-3-large
 
-# 通过 OpenAI 兼容接口使用 Google Gemini（免费额度：100 RPM）
+# 通过 OpenAI 兼容接口使用 Google Gemini（免费额度：100 RPM，需 pgvector ≥ 0.7.0）
 OPENAI_API_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
 OPENAI_API_KEY=your-google-ai-studio-api-key
 EMBEDDING_MODEL=gemini-embedding-001

@@ -257,7 +257,7 @@ EMBEDDING_BATCH_SIZE=100
     | `text-embedding-3-small` | 1536 | HNSW | **Recommended** - Best balance of quality and performance |
     | `text-embedding-3-large` | 3072 | HNSW (halfvec) | Higher quality, requires pgvector ≥ 0.7.0 |
     | `bge-m3` | 1024 | HNSW | Open-source alternative |
-    | `gemini-embedding-001` | 3072 | HNSW (halfvec) | Google Gemini — free tier (100 RPM), OpenAI-compatible endpoint |
+    | `gemini-embedding-001` | 3072 | HNSW (halfvec) | Google Gemini — free tier (100 RPM), OpenAI-compatible endpoint, requires pgvector ≥ 0.7.0 |
 
     <Info>
       **HNSW is the Recommended Index Type**
@@ -274,7 +274,7 @@ EMBEDDING_BATCH_SIZE=100
       - `vector` type: up to **2,000 dimensions** (HNSW or IVFFlat)
       - `halfvec` type: up to **4,000 dimensions** (used automatically for high-dimensional embeddings)
       
-      For `text-embedding-3-large` (3072 dimensions):
+      For models with 3072 dimensions (`text-embedding-3-large`, `gemini-embedding-001`):
       - Requires pgvector ≥ 0.7.0 for halfvec support
       - MCPHub automatically uses halfvec casting for optimal indexing
       - Older pgvector versions will work but without index optimization
@@ -291,7 +291,7 @@ EMBEDDING_BATCH_SIZE=100
     # Higher quality (requires pgvector >= 0.7.0 for optimal indexing)
     EMBEDDING_MODEL=text-embedding-3-large
 
-    # Google Gemini via OpenAI-compatible endpoint (free tier: 100 RPM)
+    # Google Gemini via OpenAI-compatible endpoint (free tier: 100 RPM) (requires pgvector >= 0.7.0 for optimal indexing)
     OPENAI_API_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
     OPENAI_API_KEY=your-google-ai-studio-api-key
     EMBEDDING_MODEL=gemini-embedding-001
