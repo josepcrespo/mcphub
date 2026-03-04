@@ -84,7 +84,7 @@ export async function getSmartRoutingConfig(): Promise<SmartRoutingConfig> {
     ),
 
     openaiApiEmbeddingModel: getConfigValue(
-      [process.env.OPENAI_API_EMBEDDING_MODEL],
+      [process.env.EMBEDDING_MODEL],
       smartRoutingSettings.openaiApiEmbeddingModel,
       'text-embedding-3-small',
       expandEnvVars,
