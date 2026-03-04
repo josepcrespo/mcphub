@@ -344,6 +344,7 @@ curl http://localhost:3000/api/smart-routing/embedding-stats \
 | `text-embedding-3-small` | 1536 | HNSW | **推荐** - 质量和性能的最佳平衡 |
 | `text-embedding-3-large` | 3072 | HNSW (halfvec) | 更高质量，需要 pgvector ≥ 0.7.0 |
 | `bge-m3` | 1024 | HNSW | 开源替代方案 |
+| `gemini-embedding-001` | 3072 | HNSW (halfvec) | Google Gemini — 免费额度（100 RPM），兼容 OpenAI 接口 |
 
 <Info>
   **HNSW 是推荐的索引类型**
@@ -376,7 +377,22 @@ EMBEDDING_MODEL=text-embedding-3-small
 
 # 更高质量（需要 pgvector >= 0.7.0 以获得最佳索引）
 EMBEDDING_MODEL=text-embedding-3-large
+
+# 通过 OpenAI 兼容接口使用 Google Gemini（免费额度：100 RPM）
+OPENAI_API_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
+OPENAI_API_KEY=your-google-ai-studio-api-key
+EMBEDDING_MODEL=gemini-embedding-001
 ```
+
+<Tip>
+  **Google Gemini 免费额度**
+
+  `gemini-embedding-001` 可通过 Google 的 OpenAI 兼容接口
+  `https://generativelanguage.googleapis.com/v1beta/openai` 使用。
+  只需通过标准的 `openaiApiBaseUrl` 设置即可接入，无需任何额外配置，
+  仅需设置 Base URL、API Key 和模型名称。
+  Google 提供慷慨的**免费额度（100 RPM）**，非常适合自托管或低流量部署。
+</Tip>
 
 ### 自定义嵌入
 

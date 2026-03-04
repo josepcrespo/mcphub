@@ -73,6 +73,7 @@ const generateAzureOpenAIEmbedding = async (
 const EMBEDDING_DIMENSIONS_SMALL = 1536; // OpenAI's text-embedding-3-small outputs 1536 dimensions
 const EMBEDDING_DIMENSIONS_LARGE = 3072; // OpenAI's text-embedding-3-large outputs 3072 dimensions
 const BGE_DIMENSIONS = 1024; // BAAI/bge-m3 outputs 1024 dimensions
+const GEMINI_EMBEDDING_DIMENSIONS = 3072; // Google Gemini gemini-embedding-001 default output dimensions
 const FALLBACK_DIMENSIONS = 100; // Fallback implementation uses 100 dimensions
 
 // pgvector index limits (as of pgvector 0.7.0+)
@@ -253,6 +254,11 @@ const getDimensionsForModel = (model: string): number => {
     return EMBEDDING_DIMENSIONS_LARGE;
   } else if (model.includes('text-embedding-3')) {
     return EMBEDDING_DIMENSIONS_SMALL;
+  } else if (model.includes('gemini-embedding')) {
+    // Google Gemini gemini-embedding-001 defaults to 3072 dimensions.
+    // Future implementation improvements may allow configurable dimensions
+    // for Gemini models, but for now we will assume the default.
+    return GEMINI_EMBEDDING_DIMENSIONS;
   } else if (model === 'fallback' || model === 'simple-hash') {
     return FALLBACK_DIMENSIONS;
   }
