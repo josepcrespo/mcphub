@@ -248,13 +248,14 @@ export async function createVectorIndex(
 
 // Get dimensions for a model
 const getDimensionsForModel = (model: string): number => {
+  model = model.toLowerCase();
   if (model.includes('bge-m3')) {
     return BGE_DIMENSIONS;
   } else if (model.includes('text-embedding-3-large')) {
     return EMBEDDING_DIMENSIONS_LARGE;
   } else if (model.includes('text-embedding-3')) {
     return EMBEDDING_DIMENSIONS_SMALL;
-  } else if (model.includes('gemini-embedding')) {
+  } else if (model.includes('gemini-embedding-001')) {
     // Google Gemini gemini-embedding-001 defaults to 3072 dimensions.
     // Future implementation improvements may allow configurable dimensions
     // for Gemini models, but for now we will assume the default.
