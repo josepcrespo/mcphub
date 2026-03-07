@@ -41,6 +41,21 @@ NODE_ENV=production
 JWT_SECRET=your-super-secret-key-change-this-in-production
 ```
 
+## Smart Routing & Embeddings
+
+### Embedding Configuration
+
+| Variable | Type | Default | Description |
+| --- | --- | --- | --- |
+| `SMART_ROUTING_ENABLED` | `boolean` | `false` | Enable the smart routing feature |
+| `EMBEDDING_MODEL` | `string` | `text-embedding-3-small` | Embedding model name used for vector search |
+| `EMBEDDING_MAX_TOKENS` | `number` | By model | Maximum tokens for text truncation before generating embeddings. Overrides the per-model default. Useful to match the `batch_size` of a local inference server (e.g. LocalAI, LM Studio). When unset, the limit is resolved automatically: `text-embedding-*` → 8191, `bge-m3` → 8192, `gemini-embedding-001` → 2048, other BGE models → 512, unknown models → 512. |
+
+```env
+# Limit truncation to 510 tokens to match a LocalAI batch_size=512 setup
+EMBEDDING_MAX_TOKENS=510
+```
+
 ## Configuration Examples
 
 ### Development Environment

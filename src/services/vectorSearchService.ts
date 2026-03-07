@@ -4,6 +4,10 @@ import { Tool } from '../types/index.js';
 import { getAppDataSource, isDatabaseConnected, initializeDatabase } from '../db/connection.js';
 import { getSmartRoutingConfig, type SmartRoutingConfig } from '../utils/smartRouting.js';
 import { toFloat32Array } from '../utils/base64.js';
+import {
+  truncateToTokenLimit,
+  getModelDefaultTokenLimit,
+} from '../utils/tokenTruncation.js';
 import OpenAI from 'openai';
 import axios from 'axios';
 
@@ -48,6 +52,12 @@ const generateAzureOpenAIEmbedding = async (
   const url = `${endpoint}/openai/deployments/${encodeURIComponent(
     azureConfig.embeddingDeployment,
   )}/embeddings?api-version=${encodeURIComponent(azureConfig.apiVersion)}`;
+
+  // Truncate text to the model's token limit before sending to Azure OpenAI
+  const azureModelName = azureConfig.embeddingDeployment ?? 'text-embedding-3-small';
+  const azureMaxTokens =
+    smartRoutingConfig.embeddingMaxTokens ?? getModelDefaultTokenLimit(azureModelName);
+  text = await truncateToTokenLimit(text, azureMaxTokens, azureModelName, smartRoutingConfig.openaiApiKey);
 
   const response = await axios.post(
     url,
@@ -342,8 +352,15 @@ async function generateEmbedding(text: string): Promise<number[]> {
     return generateFallbackEmbedding(text);
   }
 
-  // Truncate text if it's too long (OpenAI has token limits)
-  const truncatedText = text.length > 8000 ? text.substring(0, 8000) : text;
+  // Truncate text to the model's token limit using precise tokenization
+  const maxTokens =
+    smartRoutingConfig.embeddingMaxTokens ?? getModelDefaultTokenLimit(config.embeddingModel);
+  const truncatedText = await truncateToTokenLimit(
+    text,
+    maxTokens,
+    config.embeddingModel,
+    smartRoutingConfig.openaiApiKey,
+  );
 
   // Determine encoding format based on configuration
   const encodingFormatSetting = smartRoutingConfig.embeddingEncodingFormat || 'auto';

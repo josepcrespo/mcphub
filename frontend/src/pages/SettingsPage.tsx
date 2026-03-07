@@ -374,6 +374,27 @@ const BearerKeyRow: React.FC<BearerKeyRowProps> = ({
   );
 };
 
+/**
+ * Returns the default token limit for a given embedding model name.
+ * Mirrors the backend getModelDefaultTokenLimit() function.
+ * Used to display a contextual hint in the embeddingMaxTokens field.
+ */
+function getDefaultTokenLimitForUI(model: string): number {
+  const lower = model.toLowerCase();
+  const MODEL_LIMITS: Array<[string, number]> = [
+    ['text-embedding-3-small', 8191],
+    ['text-embedding-3-large', 8191],
+    ['text-embedding-ada-002', 8191],
+    ['gemini-embedding-001', 2048],
+    ['bge-m3', 8192],
+  ];
+  for (const [pattern, limit] of MODEL_LIMITS) {
+    if (lower.includes(pattern)) return limit;
+  }
+  if (lower.includes('bge')) return 512;
+  return 512;
+}
+
 const SettingsPage: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -402,6 +423,8 @@ const SettingsPage: React.FC = () => {
     azureOpenaiApiKey: string;
     azureOpenaiApiVersion: string;
     azureOpenaiEmbeddingDeployment: string;
+    // Empty string = use model default; numeric string = explicit override
+    embeddingMaxTokens: string;
   }>({
     dbUrl: '',
     embeddingProvider: 'openai',
@@ -413,6 +436,7 @@ const SettingsPage: React.FC = () => {
     azureOpenaiApiKey: '',
     azureOpenaiApiVersion: '2024-02-15-preview',
     azureOpenaiEmbeddingDeployment: '',
+    embeddingMaxTokens: '',
   });
 
   const [tempMCPRouterConfig, setTempMCPRouterConfig] = useState<{
@@ -496,6 +520,10 @@ const SettingsPage: React.FC = () => {
         azureOpenaiApiKey: smartRoutingConfig.azureOpenaiApiKey || '',
         azureOpenaiApiVersion: smartRoutingConfig.azureOpenaiApiVersion || '2024-02-15-preview',
         azureOpenaiEmbeddingDeployment: smartRoutingConfig.azureOpenaiEmbeddingDeployment || '',
+        embeddingMaxTokens:
+          smartRoutingConfig.embeddingMaxTokens != null
+            ? String(smartRoutingConfig.embeddingMaxTokens)
+            : '',
       });
     }
   }, [smartRoutingConfig]);
@@ -616,7 +644,8 @@ const SettingsPage: React.FC = () => {
       | 'azureOpenaiEndpoint'
       | 'azureOpenaiApiKey'
       | 'azureOpenaiApiVersion'
-      | 'azureOpenaiEmbeddingDeployment',
+      | 'azureOpenaiEmbeddingDeployment'
+      | 'embeddingMaxTokens',
     value: string,
   ) => {
     setTempSmartRoutingConfig({
@@ -809,6 +838,15 @@ const SettingsPage: React.FC = () => {
           tempSmartRoutingConfig.azureOpenaiEmbeddingDeployment;
       }
 
+      // embeddingMaxTokens: empty string → null (clear override), numeric string → number
+      const _rawTokens = tempSmartRoutingConfig.embeddingMaxTokens.trim();
+      const _parsedInt = _rawTokens ? parseInt(_rawTokens, 10) : NaN;
+      const parsedTokens = _rawTokens && !isNaN(_parsedInt) ? _parsedInt : null;
+      const currentTokens = smartRoutingConfig.embeddingMaxTokens ?? null;
+      if (parsedTokens !== currentTokens) {
+        updates.embeddingMaxTokens = parsedTokens;
+      }
+
       // Save all changes in a single batch update
       await updateSmartRoutingConfigBatch(updates);
     } else {
@@ -858,6 +896,15 @@ const SettingsPage: React.FC = () => {
     ) {
       updates.azureOpenaiEmbeddingDeployment =
         tempSmartRoutingConfig.azureOpenaiEmbeddingDeployment;
+    }
+
+    // embeddingMaxTokens: empty string → null (clear override), numeric string → number
+    const _rawEmt = tempSmartRoutingConfig.embeddingMaxTokens.trim();
+    const _parsedEmt = _rawEmt ? parseInt(_rawEmt, 10) : NaN;
+    const parsedEmbeddingMaxTokens = _rawEmt && !isNaN(_parsedEmt) ? _parsedEmt : null;
+    const currentEmbeddingMaxTokens = smartRoutingConfig.embeddingMaxTokens ?? null;
+    if (parsedEmbeddingMaxTokens !== currentEmbeddingMaxTokens) {
+      updates.embeddingMaxTokens = parsedEmbeddingMaxTokens;
     }
 
     if (Object.keys(updates).length > 0) {
@@ -1679,6 +1726,54 @@ const SettingsPage: React.FC = () => {
                   </select>
                 </div>
               </div>
+
+              <div className="p-3 bg-gray-50 rounded-md">
+                <div className="mb-2">
+                  <h3 className="font-medium text-gray-700">
+                    {t('settings.embeddingMaxTokens')}
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {t('settings.embeddingMaxTokensDescription')}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    min="1"
+                    value={tempSmartRoutingConfig.embeddingMaxTokens}
+                    onChange={(e) =>
+                      handleSmartRoutingConfigChange('embeddingMaxTokens', e.target.value)
+                    }
+                    placeholder={
+                      t('settings.embeddingMaxTokensPlaceholder') || 'Empty = auto by model'
+                    }
+                    className="flex-1 mt-1 block w-full py-2 px-3 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm form-input"
+                    disabled={loading}
+                  />
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  {tempSmartRoutingConfig.embeddingMaxTokens.trim()
+                    ? t('settings.embeddingMaxTokensOverride')
+                    : t('settings.embeddingMaxTokensAuto', {
+                        limit: getDefaultTokenLimitForUI(
+                          (tempSmartRoutingConfig.embeddingProvider === 'azure_openai'
+                            ? tempSmartRoutingConfig.azureOpenaiEmbeddingDeployment ||
+                              smartRoutingConfig.azureOpenaiEmbeddingDeployment
+                            : tempSmartRoutingConfig.openaiApiEmbeddingModel ||
+                              smartRoutingConfig.openaiApiEmbeddingModel) ||
+                            'text-embedding-3-small',
+                        ),
+                        model:
+                          (tempSmartRoutingConfig.embeddingProvider === 'azure_openai'
+                            ? tempSmartRoutingConfig.azureOpenaiEmbeddingDeployment ||
+                              smartRoutingConfig.azureOpenaiEmbeddingDeployment
+                            : tempSmartRoutingConfig.openaiApiEmbeddingModel ||
+                              smartRoutingConfig.openaiApiEmbeddingModel) ||
+                          'text-embedding-3-small',
+                      })}
+                </p>
+              </div>
+              
               <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
                 <div>
                   <h3 className="font-medium text-gray-700">

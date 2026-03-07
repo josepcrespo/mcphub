@@ -1200,6 +1200,16 @@ export const updateSystemConfig = async (req: Request, res: Response): Promise<v
         systemConfig.smartRouting.progressiveDisclosure = smartRouting.progressiveDisclosure;
       }
 
+      if (
+        typeof smartRouting.embeddingMaxTokens === 'number' &&
+        !isNaN(smartRouting.embeddingMaxTokens)
+      ) {
+        systemConfig.smartRouting.embeddingMaxTokens = smartRouting.embeddingMaxTokens;
+      } else if (smartRouting.embeddingMaxTokens === null) {
+        // null explicitly clears the override, restoring the per-model default
+        systemConfig.smartRouting.embeddingMaxTokens = undefined;
+      }
+
       // Check if we need to sync embeddings
       const isNowEnabled = systemConfig.smartRouting.enabled || false;
       const hasConfigChanged =
@@ -1220,7 +1230,9 @@ export const updateSystemConfig = async (req: Request, res: Response): Promise<v
         previousSmartRoutingConfig.azureOpenaiApiVersion !==
           systemConfig.smartRouting.azureOpenaiApiVersion ||
         previousSmartRoutingConfig.azureOpenaiEmbeddingDeployment !==
-          systemConfig.smartRouting.azureOpenaiEmbeddingDeployment;
+          systemConfig.smartRouting.azureOpenaiEmbeddingDeployment ||
+        previousSmartRoutingConfig.embeddingMaxTokens !==
+          systemConfig.smartRouting.embeddingMaxTokens;
 
       // Sync if: first time enabling OR smart routing is enabled and any config changed
       needsSync = (!wasSmartRoutingEnabled && isNowEnabled) || (isNowEnabled && hasConfigChanged);
