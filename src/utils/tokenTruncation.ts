@@ -280,7 +280,6 @@ export async function truncateToTokenLimit(
       const result = await truncateWithGptTokenizer(text, maxTokens);
       const outputTokens = encode(result).length;
       console.debug(`  [tokenTruncation] ✓ OpenAI tokenization successful`);
-      console.debug(`  [tokenTruncation] Output text length: ${result.length} characters`);
       console.debug(`  [tokenTruncation] Output text tokens: ${outputTokens}`);
       return result;
     } catch (error) {
@@ -313,7 +312,6 @@ export async function truncateToTokenLimit(
 
       const result = await truncateWithGeminiAPI(text, maxTokens, model, apiKey);
       console.debug(`  [tokenTruncation] ✓ Gemini tokenization successful`);
-      console.debug(`  [tokenTruncation] Output text length: ${result.length} characters`);
       return result;
     } catch (error) {
       console.error(`  [tokenTruncation] ✗ Gemini tokenization failed:`, error);
@@ -339,7 +337,6 @@ export async function truncateToTokenLimit(
 
       const result = await truncateWithHFTokenizer(text, maxTokens, model);
       console.debug(`  [tokenTruncation] ✓ HuggingFace tokenization successful`);
-      console.debug(`  [tokenTruncation] Output text length: ${result.length} characters`);
       return result;
     } catch (error) {
       console.error(`  [tokenTruncation] ✗ HuggingFace tokenization failed:`, error);
@@ -359,6 +356,5 @@ export async function truncateToTokenLimit(
   console.debug(`  [tokenTruncation] Input text tokens: ~${estimatedInputTokens} (estimated, unknown model)`);
   const maxChars = maxTokens * 3;
   const result = text.length <= maxChars ? text : text.substring(0, maxChars);
-  console.debug(`  [tokenTruncation] Output text length: ${result.length} characters`);
   return result;
 }
