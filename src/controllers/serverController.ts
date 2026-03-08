@@ -913,7 +913,9 @@ export const updateSystemConfig = async (req: Request, res: Response): Promise<v
         typeof smartRouting.azureOpenaiApiKey === 'string' ||
         typeof smartRouting.azureOpenaiApiVersion === 'string' ||
         typeof smartRouting.azureOpenaiEmbeddingDeployment === 'string' ||
-        typeof smartRouting.progressiveDisclosure === 'boolean');
+        typeof smartRouting.progressiveDisclosure === 'boolean' ||
+        typeof smartRouting.embeddingMaxTokens === 'number' ||
+        smartRouting.embeddingMaxTokens === null);
 
     const hasMcpRouterUpdate =
       mcpRouter &&
