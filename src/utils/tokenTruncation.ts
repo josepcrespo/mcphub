@@ -51,17 +51,18 @@ export function getModelDefaultTokenLimit(model: string): number {
 // Model family detection helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
+const OPENAI_MODELS = new Set(['text-embedding-3-small', 'text-embedding-3-large', 'text-embedding-ada-002']);
+
 function isOpenAIModel(model: string): boolean {
-  return model.toLowerCase().startsWith('text-embedding-');
+  return OPENAI_MODELS.has(model.toLowerCase());
 }
 
 function isGeminiModel(model: string): boolean {
-  return model.toLowerCase().startsWith('gemini-embedding-');
+  return model.toLowerCase() === 'gemini-embedding-001';
 }
 
-function isHuggingFaceModel(model: string): boolean {
-  const lower = model.toLowerCase();
-  return lower.includes('bge') || lower.includes('/');
+function isBgeM3Model(model: string): boolean {
+  return model.toLowerCase().includes('bge-m3');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
