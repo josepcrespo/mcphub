@@ -352,9 +352,15 @@ async function generateEmbedding(text: string): Promise<number[]> {
     return generateFallbackEmbedding(text);
   }
 
-  // Truncate text to the model's token limit using precise tokenization
-  const maxTokens =
+  // Truncate text to the model's token limit using precise tokenization.
+  // Apply a safety margin for providers where the local tokenizer may count
+  // slightly fewer tokens than the server-side tokenizer (e.g. SiliconFlow).
+  const TOKEN_SAFETY_FACTOR = 0.92; // 8% safety margin for token counting discrepancies
+  const isSiliconFlow = config.baseURL?.includes('siliconflow.cn');
+  const rawMaxTokens =
     smartRoutingConfig.embeddingMaxTokens ?? getModelDefaultTokenLimit(config.embeddingModel);
+  const maxTokens = isSiliconFlow ? Math.floor(rawMaxTokens * TOKEN_SAFETY_FACTOR) : rawMaxTokens;
+  
   const truncatedText = await truncateToTokenLimit(
     text,
     maxTokens,
