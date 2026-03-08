@@ -359,7 +359,7 @@ async function generateEmbedding(text: string): Promise<number[]> {
     text,
     maxTokens,
     config.embeddingModel,
-    smartRoutingConfig.openaiApiKey,
+    config.apiKey,
   );
 
   // Determine encoding format based on configuration
