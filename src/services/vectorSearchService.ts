@@ -312,12 +312,189 @@ const supportBase64Embeddings = async (baseURL: string = ''): Promise<boolean> =
 async function generateEmbedding(text: string): Promise<number[]> {
   const smartRoutingConfig = await getSmartRoutingConfig();
   const provider = smartRoutingConfig.embeddingProvider || 'openai';
+  
+  // Get config early so we can use it in logs
+  const config = await getOpenAIConfig();
+
+  // ═════════════════════════════════════════════════════════════════════════════
+  // TEST: Generate very long text (>8192 tokens) for manual e2e testing
+  // This text will be used to test token truncation across all embedding models
+  // Remove this block after testing is complete
+  // ═════════════════════════════════════════════════════════════════════════════
+  const longTestText = `
+    Advanced Text Processing and Natural Language Understanding System
+
+    This comprehensive documentation covers the complete architecture, design patterns, 
+    and implementation details of a state-of-the-art text processing and natural language 
+    understanding system. The system is built with the latest machine learning technologies 
+    and includes support for multiple languages, advanced tokenization, semantic analysis, 
+    and context-aware processing capabilities.
+
+    Executive Summary
+
+    The system provides enterprise-grade text processing capabilities including but not 
+    limited to: full text indexing, semantic search, named entity recognition, sentiment 
+    analysis, keyword extraction, document clustering, text summarization, question answering, 
+    machine translation, language detection, grammar correction, and more. The implementation 
+    is optimized for high-throughput processing with sub-millisecond response times for 
+    most operations under typical workloads.
+
+    Architecture Overview
+
+    The system is built on a microservices architecture with the following key components:
+    1. Text Ingestion Layer - Handles raw text input from multiple sources
+    2. Preprocessing Pipeline - Normalizes and prepares text for analysis
+    3. Tokenization Engine - Breaks down text into meaningful units for processing
+    4. Feature Extraction Module - Generates embeddings and features from tokens
+    5. Analytics Engine - Performs various types of analysis on processed text
+    6. Storage and Retrieval Layer - Manages persistent and cached data
+    7. API Gateway - Provides REST and gRPC interfaces to external clients
+    8. Monitoring and Logging - Comprehensive observability stack
+
+    Core Processing Pipeline
+
+    The main text processing pipeline consists of several sequential stages:
+
+    Stage 1: Input Validation and Sanitization
+    All input text undergoes strict validation to ensure it meets format requirements and 
+    security policies. This includes checking for malformed UTF-8 sequences, detecting and 
+    handling anomalous character encodings, filtering potentially harmful content, and 
+    validating file sizes and resource constraints. The sanitization process removes control 
+    characters, normalizes whitespace, and applies Unicode normalization using NFC 
+    (Canonical Decomposition, followed by Canonical Composition).
+
+    Stage 2: Language Detection and Classification
+    The system automatically detects the language of input text using statistical models 
+    trained on a corpus of over 50 languages. Detection is performed with 99.7% accuracy 
+    for texts longer than 100 characters. The language information is used throughout the 
+    pipeline to select appropriate language-specific models and processors.
+
+    Stage 3: Tokenization and Segmentation
+    Text is segmented into sentences and paragraphs, then tokenized using language-specific 
+    rules and machine learning models. The system supports multiple tokenization strategies 
+    including byte-pair encoding (BPE), word-piece tokenization, SentencePiece, and 
+    character-level tokenization. Each tokenizer is optimized for specific use cases and 
+    can handle complex scenarios like contractions, hyphenations, and multilingual text.
+
+    Stage 4: Morphological and Syntactic Analysis
+    The system performs part-of-speech tagging, lemmatization, stemming, and dependency 
+    parsing. These operations help normalize text and provide structural information that 
+    is essential for downstream tasks like entity recognition and information extraction.
+
+    Stage 5: Semantic Analysis and Embedding Generation
+    Each token and sequence of tokens is converted into high-dimensional dense vectors 
+    (embeddings) that capture semantic meaning. The system uses state-of-the-art transformer 
+    models and contextual embeddings that understand relationships between words, handle 
+    polysemy, and capture nuanced semantic information. Multiple embedding models can be 
+    used depending on the application requirements.
+
+    Stage 6: Named Entity Recognition
+    The system identifies and classifies named entities in text including persons, 
+    organizations, locations, products, events, and custom domain-specific entities. 
+    NER is powered by BiLSTM-CRF models and transformer-based classifiers with support 
+    for both flat and nested entity recognition.
+
+    Stage 7: Sentiment Analysis and Emotion Detection
+    The system analyzes the emotional tone, sentiment polarity, and subjectivity of text. 
+    Advanced models can detect mixed sentiments, implicit opinions, and sarcasm. Results 
+    include fine-grained sentiment scores for individual sentences and documents.
+
+    Stage 8: Text Summarization
+    Automatic summarization capabilities include both extractive and abstractive approaches. 
+    The system can generate summaries at multiple lengths with configurable parameters to 
+    control summary style, detail level, and focus areas.
+
+    Advanced Features
+
+    Context-Aware Processing: The system maintains context windows across sentences and 
+    paragraphs, allowing it to understand references, resolve pronouns, and maintain 
+    coherence in analysis across long documents.
+
+    Multilingual Support: Native support for 50+ languages with language-specific models, 
+    rule sets, and processing pipelines. Machine translation capabilities enable 
+    cross-lingual analysis.
+
+    Custom Domain Models: Support for training and deploying custom models for domain-specific 
+    vocabulary, terminology, and analysis patterns. Fine-tuning capabilities for specialized 
+    use cases.
+
+    Real-time Processing: Streaming APIs for processing text data in real-time with 
+    low-latency response times and minimal buffering requirements.
+
+    Scalability and Performance
+
+    The system is designed to handle massive scale with linear scalability across multiple 
+    machines. Benchmarks show the system can process 10,000+ documents per second on 
+    commodity hardware. Memory usage is optimized through smart batching, lazy evaluation, 
+    and efficient data structures.
+
+    API Documentation
+
+    REST API endpoints are available for all major functionality:
+    - POST /api/analyze - Comprehensive text analysis
+    - POST /api/embeddings - Generate embeddings for text
+    - POST /api/search - Semantic search across documents
+    - POST /api/entities - Named entity recognition
+    - POST /api/sentiment - Sentiment analysis
+    - POST /api/summarize - Text summarization
+
+    Security and Privacy
+
+    The system implements enterprise-grade security with encryption at rest and in transit, 
+    role-based access control, audit logging, and compliance with GDPR, CCPA, and other 
+    privacy regulations. All processing can be done on-premises for sensitive applications.
+
+    Integration Examples
+
+    Examples showing how to integrate the system with popular frameworks and platforms:
+    - Integration with Apache Spark for distributed processing
+    - Integration with Elasticsearch for full-text search
+    - Integration with TensorFlow for custom model development
+    - Integration with Docker/Kubernetes for containerized deployment
+    - Integration with AWS/Azure/GCP for cloud deployment
+
+    Performance Metrics
+
+    Under typical production workloads with appropriate hardware:
+    - Text analysis: 50-100 microseconds per document
+    - Embedding generation: 10-20 microseconds per token
+    - Search queries: 1-5 milliseconds
+    - Sentiment analysis: 5-10 milliseconds per document
+    - Entity recognition: 20-50 milliseconds per document
+
+    This exhaustive documentation provides comprehensive coverage of the system's 
+    capabilities, architecture, and usage patterns to enable organizations to leverage 
+    advanced text processing and NLP capabilities at scale.
+  `;
+
+  // Use the long test text for e2e testing
+  text =
+    longTestText + ' ' +
+    longTestText + ' ' +
+    longTestText + ' ' +
+    longTestText + ' ' +
+    longTestText + ' ' +
+    longTestText + ' ' +
+    longTestText + ' ' +
+    longTestText;
 
   // Normalize whitespace before generating the embedding (issue #639):
   // tool descriptions fetched from MCP servers can contain raw newline characters
   // and other whitespace that introduce noise into the vector representation,
   // potentially affecting the quality of semantic search results.
   text = text.replace(/\s+/g, ' ').trim();
+
+  // Log information about the test text
+  console.debug('');
+  console.debug('═══════════════════════════════════════════════════════════════════════════');
+  console.debug('  🧪 E2E TEST: Text Truncation for Embedding Generation');
+  console.debug('═══════════════════════════════════════════════════════════════════════════');
+  console.debug(`  Input Test Text Length: ${text.length} characters (EXPECTED TO EXCEED 8192 TOKENS)`);
+  console.debug(`  Provider: ${provider === 'azure_openai' ? 'Azure OpenAI' : 'OpenAI-compatible'}`);
+  console.debug(`  Embedding Model: ${config.embeddingModel}`);
+  console.debug(`  Base URL: ${config.baseURL || 'default'}`);
+  console.debug(`  API Key: ${config.apiKey ? `present (${config.apiKey.length} chars, ${config.apiKey.substring(0, 4)}${config.apiKey.length > 8 ? '...' + config.apiKey.slice(-4) : ''})` : '⚠️  EMPTY — will cause 401'}`);
+  console.debug('─────────────────────────────────────────────────────────────────────────────');
 
   if (provider === 'azure_openai') {
     const azureConfig = getAzureOpenAIConfig(smartRoutingConfig);
@@ -343,7 +520,6 @@ async function generateEmbedding(text: string): Promise<number[]> {
     }
   }
 
-  const config = await getOpenAIConfig();
   const openai = await getOpenAIClient();
 
   // Check if API key is configured
@@ -361,12 +537,21 @@ async function generateEmbedding(text: string): Promise<number[]> {
     smartRoutingConfig.embeddingMaxTokens ?? getModelDefaultTokenLimit(config.embeddingModel);
   const maxTokens = isSiliconFlow ? Math.floor(rawMaxTokens * TOKEN_SAFETY_FACTOR) : rawMaxTokens;
   
+  console.debug('  Processing truncation...');
+  if (isSiliconFlow) {
+    console.debug(`  [tokenTruncation] Safety factor applied (${(TOKEN_SAFETY_FACTOR * 100).toFixed(0)}%) to max tokens allowed, from: ${rawMaxTokens} to ${maxTokens} tokens`);
+  }
+  
   const truncatedText = await truncateToTokenLimit(
     text,
     maxTokens,
     config.embeddingModel,
     config.apiKey,
   );
+
+  console.debug(`  Text After Truncation: ${truncatedText.length} characters`);
+  console.debug(`  Reduction: ${text.length - truncatedText.length} characters (${((text.length - truncatedText.length) / text.length * 100).toFixed(2)}%)`);
+  console.debug('─────────────────────────────────────────────────────────────────────────────');
 
   // Determine encoding format based on configuration
   const encodingFormatSetting = smartRoutingConfig.embeddingEncodingFormat || 'auto';

@@ -44,6 +44,10 @@ export interface SmartRoutingConfig {
  *
  * @returns {SmartRoutingConfig} Complete smart routing configuration
  */
+
+// Helper: compare only the first/last 4 chars of a key to avoid logging full secrets
+const trimKey = (key: string): string => key.slice(0, 4) + '...' + key.slice(-4);
+
 export async function getSmartRoutingConfig(): Promise<SmartRoutingConfig> {
   // Get system config from DAO
   const systemConfigDao = getSystemConfigDao();
@@ -93,26 +97,63 @@ export async function getSmartRoutingConfig(): Promise<SmartRoutingConfig> {
     ),
 
     // OpenAI API configuration
-    openaiApiBaseUrl: getConfigValue(
-      [process.env.OPENAI_API_BASE_URL],
-      smartRoutingSettings.openaiApiBaseUrl,
-      'https://api.openai.com/v1',
-      expandEnvVars,
-    ),
+    openaiApiBaseUrl: (() => {
+      const envVal = process.env.OPENAI_API_BASE_URL;
+      const dbVal = smartRoutingSettings.openaiApiBaseUrl;
+      const resolved = getConfigValue([envVal], dbVal, 'https://api.openai.com/v1', expandEnvVars);
+      if (envVal && dbVal && envVal !== dbVal) {
+        console.warn(
+          `[smartRouting] OPENAI_API_BASE_URL env var ("${envVal}") is overriding the UI/DB-configured base URL ("${dbVal}"). ` +
+          `Unset the OPENAI_API_BASE_URL environment variable to use the UI-configured value.`,
+        );
+      }
+      return resolved;
+    })(),
 
-    openaiApiKey: getConfigValue(
-      [process.env.OPENAI_API_KEY],
-      smartRoutingSettings.openaiApiKey,
-      '',
-      expandEnvVars,
-    ),
+    openaiApiKey: (() => {
+      const envVal = process.env.OPENAI_API_KEY;
+      const rawDbVal = smartRoutingSettings.openaiApiKey as string | undefined;
+      const resolved = getConfigValue([envVal], rawDbVal, '', expandEnvVars);
+      // Warn when env var overrides DB key
+      if (envVal && rawDbVal && trimKey(envVal) !== trimKey(rawDbVal)) {
+        console.warn(
+          `[smartRouting] OPENAI_API_KEY env var is overriding the UI/DB-configured API key. ` +
+          `Unset the OPENAI_API_KEY environment variable to use the UI-configured value.`,
+        );
+      }
+      // Warn when DB value is a ${VAR} reference that expanded to empty
+      if (!envVal && rawDbVal && rawDbVal.includes('$') && resolved === '') {
+        console.warn(
+          `[smartRouting] openaiApiKey: DB value appears to be an env var reference ("${rawDbVal}") ` +
+          `that could not be expanded. Set the referenced environment variable in your container, ` +
+          `or replace the stored value with the actual API key via the MCPHub UI.`,
+        );
+      }
+      // General: API key resolved to empty — surface the problem clearly
+      if (resolved === '') {
+        const source = envVal ? 'env var OPENAI_API_KEY' : rawDbVal ? `DB value "${rawDbVal}"` : 'no value in env or DB';
+        console.warn(`[smartRouting] openaiApiKey resolved to empty string (source: ${source}). Embedding API calls will receive a 401 Unauthorized error.`);
+      }
+      return resolved;
+    })(),
 
-    openaiApiEmbeddingModel: getConfigValue(
-      [process.env.EMBEDDING_MODEL],
-      smartRoutingSettings.openaiApiEmbeddingModel,
-      'text-embedding-3-small',
-      expandEnvVars,
-    ),
+    openaiApiEmbeddingModel: (() => {
+      const envVal = process.env.EMBEDDING_MODEL;
+      const dbVal = smartRoutingSettings.openaiApiEmbeddingModel;
+      const resolved = getConfigValue(
+        [envVal],
+        dbVal,
+        'text-embedding-3-small',
+        expandEnvVars,
+      );
+      if (envVal && dbVal && envVal !== dbVal) {
+        console.warn(
+          `[smartRouting] EMBEDDING_MODEL env var ("${envVal}") is overriding the UI/DB-configured model ("${dbVal}"). ` +
+          `Unset the EMBEDDING_MODEL environment variable to use the UI-configured value.`,
+        );
+      }
+      return resolved;
+    })(),
 
     azureOpenaiEndpoint: getConfigValue(
       [process.env.AZURE_OPENAI_ENDPOINT],

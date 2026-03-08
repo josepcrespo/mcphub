@@ -263,17 +263,102 @@ export async function truncateToTokenLimit(
   model: string,
   apiKey?: string,
 ): Promise<string> {
+  console.debug('');
+  console.debug('  [tokenTruncation] Starting tokenization process...');
+  console.debug(`  [tokenTruncation] Input text length: ${text.length} characters`);
+  console.debug(`  [tokenTruncation] Max tokens allowed: ${maxTokens}`);
+
   if (isOpenAIModel(model)) {
-    return truncateWithGptTokenizer(text, maxTokens);
+    console.debug('  [tokenTruncation] → Using OpenAI/Azure BPE tokenizer (cl100k_base)');
+    try {
+      // Count tokens in input text
+      const { encode } = await import('gpt-tokenizer');
+      const inputTokens = encode(text).length;
+      console.debug(`  [tokenTruncation] Input text tokens: ${inputTokens}`);
+      console.debug(`  [tokenTruncation] Tokens to truncate: ${Math.max(0, inputTokens - maxTokens)}`);
+
+      const result = await truncateWithGptTokenizer(text, maxTokens);
+      const outputTokens = encode(result).length;
+      console.debug(`  [tokenTruncation] ✓ OpenAI tokenization successful`);
+      console.debug(`  [tokenTruncation] Output text length: ${result.length} characters`);
+      console.debug(`  [tokenTruncation] Output text tokens: ${outputTokens}`);
+      return result;
+    } catch (error) {
+      console.error(`  [tokenTruncation] ✗ OpenAI tokenization failed:`, error);
+      throw error;
+    }
   }
+
   if (isGeminiModel(model)) {
-    return truncateWithGeminiAPI(text, maxTokens, model, apiKey);
+    console.debug('  [tokenTruncation] → Using Google Gemini countTokens API');
+    try {
+      // Count tokens in input text using Gemini API
+      const { GoogleGenAI } = await import('@google/genai');
+      const finalApiKey = apiKey || '';
+      let inputTokenCount = 0;
+
+      if (finalApiKey) {
+        try {
+          const ai = new GoogleGenAI({ apiKey: finalApiKey });
+          const countResult = await ai.models.countTokens({ model, contents: text });
+          inputTokenCount = countResult.totalTokens ?? 0;
+          console.debug(`  [tokenTruncation] Input text tokens: ${inputTokenCount}`);
+          console.debug(`  [tokenTruncation] Tokens to truncate: ${Math.max(0, inputTokenCount - maxTokens)}`);
+        } catch (countError) {
+          console.warn(`  [tokenTruncation] Could not count input tokens:`, countError);
+        }
+      } else {
+        console.debug(`  [tokenTruncation] Input text tokens: ~${Math.ceil(text.length / 3)} (estimated, no API key)`);
+      }
+
+      const result = await truncateWithGeminiAPI(text, maxTokens, model, apiKey);
+      console.debug(`  [tokenTruncation] ✓ Gemini tokenization successful`);
+      console.debug(`  [tokenTruncation] Output text length: ${result.length} characters`);
+      return result;
+    } catch (error) {
+      console.error(`  [tokenTruncation] ✗ Gemini tokenization failed:`, error);
+      console.debug('  [tokenTruncation] Falling back to conservative heuristic (maxTokens * 3)');
+      const maxChars = maxTokens * 3;
+      const result = text.length <= maxChars ? text : text.substring(0, maxChars);
+      console.debug(`  [tokenTruncation] Output text length: ${result.length} characters (fallback)`);
+      return result;
+    }
   }
-  if (isHuggingFaceModel(model)) {
-    return truncateWithHFTokenizer(text, maxTokens, model);
+
+  if (isBgeM3Model(model)) {
+    console.debug('  [tokenTruncation] → Using HuggingFace AutoTokenizer (BAAI/bge-m3)');
+    try {
+      // Count tokens in input text using HuggingFace tokenizer
+      const modelId = getHFModelId(model);
+      const tokenizer = await getHFTokenizer(modelId);
+      const encoded = await tokenizer(text, { padding: false, truncation: false });
+      const rawIds: ArrayLike<number | bigint> = (encoded.input_ids as { data: ArrayLike<number | bigint> }).data;
+      const inputTokenCount = Array.from(rawIds as ArrayLike<number>).length;
+      console.debug(`  [tokenTruncation] Input text tokens: ${inputTokenCount}`);
+      console.debug(`  [tokenTruncation] Tokens to truncate: ${Math.max(0, inputTokenCount - maxTokens)}`);
+
+      const result = await truncateWithHFTokenizer(text, maxTokens, model);
+      console.debug(`  [tokenTruncation] ✓ HuggingFace tokenization successful`);
+      console.debug(`  [tokenTruncation] Output text length: ${result.length} characters`);
+      return result;
+    } catch (error) {
+      console.error(`  [tokenTruncation] ✗ HuggingFace tokenization failed:`, error);
+      console.debug('  [tokenTruncation] Falling back to conservative heuristic (maxTokens * 3)');
+      const maxChars = maxTokens * 3;
+      const result = text.length <= maxChars ? text : text.substring(0, maxChars);
+      console.debug(`  [tokenTruncation] Input text tokens: ~${Math.ceil(text.length / 3)} (estimated, heuristic)`);
+      console.debug(`  [tokenTruncation] Output text length: ${result.length} characters (fallback)`);
+      return result;
+    }
   }
+
   // Fallback heuristic: ~3 chars per token (conservative for CJK/multilingual).
   // Ratio is safe for English (~4 chars/token) and CJK (~2 chars/token).
+  console.debug('  [tokenTruncation] → Using conservative heuristic fallback (unknown model)');
+  const estimatedInputTokens = Math.ceil(text.length / 3);
+  console.debug(`  [tokenTruncation] Input text tokens: ~${estimatedInputTokens} (estimated, unknown model)`);
   const maxChars = maxTokens * 3;
-  return text.length <= maxChars ? text : text.substring(0, maxChars);
+  const result = text.length <= maxChars ? text : text.substring(0, maxChars);
+  console.debug(`  [tokenTruncation] Output text length: ${result.length} characters`);
+  return result;
 }

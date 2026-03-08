@@ -178,7 +178,8 @@ describe('truncateToTokenLimit – Gemini branch (mocked API)', () => {
     const result = await truncate(text, maxTokens, 'gemini-embedding-001', 'mock-api-key');
 
     expect(result).toBe(text);
-    expect(countTokensMock).toHaveBeenCalledTimes(1);
+    // Called twice: once to count input tokens, once from truncateWithGeminiAPI
+    expect(countTokensMock).toHaveBeenCalledTimes(2);
   });
 
   it('(c) binary search converges to longest prefix within limit', async () => {
