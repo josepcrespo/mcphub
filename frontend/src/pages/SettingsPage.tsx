@@ -1777,25 +1777,22 @@ const SettingsPage: React.FC = () => {
                   />
                 </div>
                 <p className="text-xs text-gray-500 mt-2">
-                  {tempSmartRoutingConfig.embeddingMaxTokens.trim()
-                    ? t('settings.embeddingMaxTokensOverride')
-                    : t('settings.embeddingMaxTokensAuto', {
-                        limit: getDefaultTokenLimitForUI(
-                          (tempSmartRoutingConfig.embeddingProvider === 'azure_openai'
-                            ? tempSmartRoutingConfig.azureOpenaiEmbeddingDeployment ||
-                              smartRoutingConfig.azureOpenaiEmbeddingDeployment
-                            : tempSmartRoutingConfig.openaiApiEmbeddingModel ||
-                              smartRoutingConfig.openaiApiEmbeddingModel) ||
-                            'text-embedding-3-small',
-                        ),
-                        model:
-                          (tempSmartRoutingConfig.embeddingProvider === 'azure_openai'
-                            ? tempSmartRoutingConfig.azureOpenaiEmbeddingDeployment ||
-                              smartRoutingConfig.azureOpenaiEmbeddingDeployment
-                            : tempSmartRoutingConfig.openaiApiEmbeddingModel ||
-                              smartRoutingConfig.openaiApiEmbeddingModel) ||
-                          'text-embedding-3-small',
-                      })}
+                  {(() => {
+                    const embeddingModelName =
+                      (tempSmartRoutingConfig.embeddingProvider === 'azure_openai'
+                        ? tempSmartRoutingConfig.azureOpenaiEmbeddingDeployment ||
+                          smartRoutingConfig.azureOpenaiEmbeddingDeployment
+                        : tempSmartRoutingConfig.openaiApiEmbeddingModel ||
+                          smartRoutingConfig.openaiApiEmbeddingModel) ||
+                      'text-embedding-3-small';
+
+                    return tempSmartRoutingConfig.embeddingMaxTokens.trim()
+                      ? t('settings.embeddingMaxTokensOverride')
+                      : t('settings.embeddingMaxTokensAuto', {
+                          limit: getDefaultTokenLimitForUI(embeddingModelName),
+                          model: embeddingModelName,
+                        });
+                  })()}
                 </p>
               </div>
               
