@@ -107,7 +107,7 @@ const tokenizerCache = new Map<string, ReturnType<typeof import('@huggingface/tr
  * @param modelId  The fully-qualified HuggingFace Hub model ID (e.g., "BAAI/bge-m3").
  * @returns        The cached or freshly-downloaded tokenizer instance.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 async function getHFTokenizer(modelId: string): Promise<any> {
   if (!tokenizerCache.has(modelId)) {
     const { AutoTokenizer } = await import('@huggingface/transformers');
