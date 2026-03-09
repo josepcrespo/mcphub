@@ -17,6 +17,13 @@ export interface SmartRoutingConfig {
   azureOpenaiApiVersion?: string;
   azureOpenaiEmbeddingDeployment?: string;
   /**
+   * The actual underlying OpenAI model name deployed in Azure (e.g. "text-embedding-3-small").
+   * Azure deployment names are arbitrary and not recognized by the tokenizer; this field
+   * provides the real model name so that token truncation uses the correct limit and
+   * tokenizer family (cl100k_base BPE for all text-embedding-* models).
+   */
+  azureOpenaiEmbeddingModel?: string;
+  /**
    * When enabled, search_tools returns only tool name and description (without full inputSchema).
    * A new describe_tool endpoint is provided to get the full tool schema on demand.
    * This reduces token usage for AI clients that don't need all tool parameters upfront.
@@ -179,6 +186,13 @@ export async function getSmartRoutingConfig(): Promise<SmartRoutingConfig> {
     azureOpenaiEmbeddingDeployment: getConfigValue(
       [process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT],
       smartRoutingSettings.azureOpenaiEmbeddingDeployment,
+      '',
+      expandEnvVars,
+    ),
+
+    azureOpenaiEmbeddingModel: getConfigValue(
+      [process.env.AZURE_OPENAI_EMBEDDING_MODEL],
+      smartRoutingSettings.azureOpenaiEmbeddingModel,
       '',
       expandEnvVars,
     ),
