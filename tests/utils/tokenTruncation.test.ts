@@ -324,8 +324,8 @@ describe('truncateToTokenLimit – countTokens API error handling', () => {
 });
 
 describe('truncateToTokenLimit – model limit validation', () => {
-  it('respects OpenAI model limits: text truncated to fit within 8192 tokens', async () => {
-    // ~16000 words → ~80000+ tokens, well exceeding 8192
+  it('respects OpenAI model limits: text truncated to fit within 8191 tokens', async () => {
+    // ~16000 words → ~80000+ tokens, well exceeding 8191
     const hugeText = makeEnglishText(16000);
     const maxTokens = getModelDefaultTokenLimit('text-embedding-3-small');
 
