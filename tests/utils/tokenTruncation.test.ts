@@ -403,7 +403,7 @@ describe('truncateToTokenLimit – HuggingFace tokenizer error handling', () => 
 
       try {
         const largeText = 'a'.repeat(1000);
-        const result = await truncateToTokenLimit(largeText, 100, 'bge-custom-model');
+        const result = await truncateToTokenLimit(largeText, 100, 'bge-m3-custom');
 
         // Should fall back to heuristic instead of crashing
         expect(result.length).toBeLessThanOrEqual(100 * 3);
