@@ -269,7 +269,7 @@ export async function truncateToTokenLimit(
   if (isGeminiModel(model)) {
     return truncateWithGeminiAPI(text, maxTokens, model, apiKey);
   }
-  if (isHuggingFaceModel(model)) {
+  if (isBgeM3Model(model)) {
     return truncateWithHFTokenizer(text, maxTokens, model);
   }
   // Fallback heuristic: ~3 chars per token (conservative for CJK/multilingual).
