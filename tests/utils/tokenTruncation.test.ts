@@ -34,16 +34,16 @@ function makeCJKText(chars: number): string {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('getModelDefaultTokenLimit', () => {
-  it('returns 8192 for text-embedding-3-small', () => {
-    expect(getModelDefaultTokenLimit('text-embedding-3-small')).toBe(8192);
+  it('returns 8191 for text-embedding-3-small', () => {
+    expect(getModelDefaultTokenLimit('text-embedding-3-small')).toBe(8191);
   });
 
-  it('returns 8192 for text-embedding-3-large', () => {
-    expect(getModelDefaultTokenLimit('text-embedding-3-large')).toBe(8192);
+  it('returns 8191 for text-embedding-3-large', () => {
+    expect(getModelDefaultTokenLimit('text-embedding-3-large')).toBe(8191);
   });
 
-  it('returns 8192 for text-embedding-ada-002', () => {
-    expect(getModelDefaultTokenLimit('text-embedding-ada-002')).toBe(8192);
+  it('returns 8191 for text-embedding-ada-002', () => {
+    expect(getModelDefaultTokenLimit('text-embedding-ada-002')).toBe(8191);
   });
 
   it('returns 2048 for gemini-embedding-001', () => {
@@ -354,9 +354,9 @@ describe('truncateToTokenLimit – model limit validation', () => {
 
   it('getModelDefaultTokenLimit returns correct limits for all major models', () => {
     // Verify lookup table is correct
-    expect(getModelDefaultTokenLimit('text-embedding-3-small')).toBe(8192);
-    expect(getModelDefaultTokenLimit('text-embedding-3-large')).toBe(8192);
-    expect(getModelDefaultTokenLimit('text-embedding-ada-002')).toBe(8192);
+    expect(getModelDefaultTokenLimit('text-embedding-3-small')).toBe(8191);
+    expect(getModelDefaultTokenLimit('text-embedding-3-large')).toBe(8191);
+    expect(getModelDefaultTokenLimit('text-embedding-ada-002')).toBe(8191);
     expect(getModelDefaultTokenLimit('gemini-embedding-001')).toBe(2048);
     expect(getModelDefaultTokenLimit('bge-m3')).toBe(8192);
     expect(getModelDefaultTokenLimit('bge-large-en-v1.5')).toBe(512);
