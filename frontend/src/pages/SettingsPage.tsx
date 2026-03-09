@@ -395,6 +395,24 @@ function getDefaultTokenLimitForUI(model: string): number {
   return 512;
 }
 
+/**
+ * Parses embeddingMaxTokens from form input string.
+ * Returns the parsed value if it differs from current value, otherwise undefined (no update needed).
+ * - Empty string or whitespace → null (clear override)
+ * - Valid number string → parsed number
+ * - Invalid input or unchanged value → undefined
+ */
+function parseEmbeddingMaxTokensForUpdate(
+  rawValue: string,
+  currentValue: number | null | undefined,
+): number | null | undefined {
+  const trimmed = rawValue.trim();
+  const parsed = trimmed ? parseInt(trimmed, 10) : NaN;
+  const result = trimmed && !isNaN(parsed) ? parsed : null;
+  const current = currentValue ?? null;
+  return result !== current ? result : undefined;
+}
+
 const SettingsPage: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -839,12 +857,12 @@ const SettingsPage: React.FC = () => {
       }
 
       // embeddingMaxTokens: empty string → null (clear override), numeric string → number
-      const _rawTokens = tempSmartRoutingConfig.embeddingMaxTokens.trim();
-      const _parsedInt = _rawTokens ? parseInt(_rawTokens, 10) : NaN;
-      const parsedTokens = _rawTokens && !isNaN(_parsedInt) ? _parsedInt : null;
-      const currentTokens = smartRoutingConfig.embeddingMaxTokens ?? null;
-      if (parsedTokens !== currentTokens) {
-        updates.embeddingMaxTokens = parsedTokens;
+      const embeddingMaxTokensUpdate = parseEmbeddingMaxTokensForUpdate(
+        tempSmartRoutingConfig.embeddingMaxTokens,
+        smartRoutingConfig.embeddingMaxTokens,
+      );
+      if (embeddingMaxTokensUpdate !== undefined) {
+        updates.embeddingMaxTokens = embeddingMaxTokensUpdate;
       }
 
       // Save all changes in a single batch update
@@ -899,12 +917,12 @@ const SettingsPage: React.FC = () => {
     }
 
     // embeddingMaxTokens: empty string → null (clear override), numeric string → number
-    const _rawEmt = tempSmartRoutingConfig.embeddingMaxTokens.trim();
-    const _parsedEmt = _rawEmt ? parseInt(_rawEmt, 10) : NaN;
-    const parsedEmbeddingMaxTokens = _rawEmt && !isNaN(_parsedEmt) ? _parsedEmt : null;
-    const currentEmbeddingMaxTokens = smartRoutingConfig.embeddingMaxTokens ?? null;
-    if (parsedEmbeddingMaxTokens !== currentEmbeddingMaxTokens) {
-      updates.embeddingMaxTokens = parsedEmbeddingMaxTokens;
+    const embeddingMaxTokensUpdate = parseEmbeddingMaxTokensForUpdate(
+      tempSmartRoutingConfig.embeddingMaxTokens,
+      smartRoutingConfig.embeddingMaxTokens,
+    );
+    if (embeddingMaxTokensUpdate !== undefined) {
+      updates.embeddingMaxTokens = embeddingMaxTokensUpdate;
     }
 
     if (Object.keys(updates).length > 0) {
@@ -1759,25 +1777,21 @@ const SettingsPage: React.FC = () => {
                   />
                 </div>
                 <p className="text-xs text-gray-500 mt-2">
-                  {tempSmartRoutingConfig.embeddingMaxTokens.trim()
-                    ? t('settings.embeddingMaxTokensOverride')
-                    : t('settings.embeddingMaxTokensAuto', {
-                        limit: getDefaultTokenLimitForUI(
-                          (tempSmartRoutingConfig.embeddingProvider === 'azure_openai'
-                            ? tempSmartRoutingConfig.azureOpenaiEmbeddingDeployment ||
-                              smartRoutingConfig.azureOpenaiEmbeddingDeployment
-                            : tempSmartRoutingConfig.openaiApiEmbeddingModel ||
-                              smartRoutingConfig.openaiApiEmbeddingModel) ||
-                            'text-embedding-3-small',
-                        ),
-                        model:
-                          (tempSmartRoutingConfig.embeddingProvider === 'azure_openai'
-                            ? tempSmartRoutingConfig.azureOpenaiEmbeddingDeployment ||
-                              smartRoutingConfig.azureOpenaiEmbeddingDeployment
-                            : tempSmartRoutingConfig.openaiApiEmbeddingModel ||
-                              smartRoutingConfig.openaiApiEmbeddingModel) ||
-                          'text-embedding-3-small',
-                      })}
+                  {(() => {
+                    const embeddingModelName =
+                      (tempSmartRoutingConfig.embeddingProvider === 'azure_openai'
+                        ? tempSmartRoutingConfig.azureOpenaiEmbeddingDeployment ||
+                          smartRoutingConfig.azureOpenaiEmbeddingDeployment
+                        : tempSmartRoutingConfig.openaiApiEmbeddingModel ||
+                          smartRoutingConfig.openaiApiEmbeddingModel) ||
+                      'text-embedding-3-small';
+                    return tempSmartRoutingConfig.embeddingMaxTokens.trim()
+                      ? t('settings.embeddingMaxTokensOverride')
+                      : t('settings.embeddingMaxTokensAuto', {
+                          limit: getDefaultTokenLimitForUI(embeddingModelName),
+                          model: embeddingModelName,
+                        });
+                  })()}
                 </p>
               </div>
               

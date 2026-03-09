@@ -19,9 +19,9 @@
  * 512 used for other BGE variants.
  */
 const MODEL_TOKEN_LIMITS: Array<[string, number]> = [
-  ['text-embedding-3-small', 8192],
-  ['text-embedding-3-large', 8192],
-  ['text-embedding-ada-002', 8192],
+  ['text-embedding-3-small', 8191],
+  ['text-embedding-3-large', 8191],
+  ['text-embedding-ada-002', 8191],
   ['gemini-embedding-001', 2048],
   ['bge-m3', 8192],
 ];
@@ -107,7 +107,6 @@ const tokenizerCache = new Map<string, ReturnType<typeof import('@huggingface/tr
  * @param modelId  The fully-qualified HuggingFace Hub model ID (e.g., "BAAI/bge-m3").
  * @returns        The cached or freshly-downloaded tokenizer instance.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function getHFTokenizer(modelId: string): Promise<any> {
   if (!tokenizerCache.has(modelId)) {
     const { AutoTokenizer } = await import('@huggingface/transformers');
