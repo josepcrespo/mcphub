@@ -19,9 +19,9 @@
  * 512 used for other BGE variants.
  */
 const MODEL_TOKEN_LIMITS: Array<[string, number]> = [
-  ['text-embedding-3-small', 8192],
-  ['text-embedding-3-large', 8192],
-  ['text-embedding-ada-002', 8192],
+  ['text-embedding-3-small', 8191],
+  ['text-embedding-3-large', 8191],
+  ['text-embedding-ada-002', 8191],
   ['gemini-embedding-001', 2048],
   ['bge-m3', 8192],
 ];
