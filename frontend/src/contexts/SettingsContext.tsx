@@ -40,6 +40,7 @@ interface SmartRoutingConfig {
   azureOpenaiApiVersion?: string;
   azureOpenaiEmbeddingDeployment?: string;
   progressiveDisclosure: boolean;
+  embeddingMaxTokens?: number;
 }
 
 interface MCPRouterConfig {
@@ -194,6 +195,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
     azureOpenaiApiVersion: '',
     azureOpenaiEmbeddingDeployment: '',
     progressiveDisclosure: false,
+    embeddingMaxTokens: undefined,
   });
 
   const [mcpRouterConfig, setMCPRouterConfig] = useState<MCPRouterConfig>({
@@ -268,6 +270,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
           azureOpenaiEmbeddingDeployment:
             data.data.systemConfig.smartRouting.azureOpenaiEmbeddingDeployment || '',
           progressiveDisclosure: data.data.systemConfig.smartRouting.progressiveDisclosure ?? false,
+          embeddingMaxTokens: data.data.systemConfig.smartRouting.embeddingMaxTokens,
         });
       }
       if (data.success && data.data?.systemConfig?.mcpRouter) {

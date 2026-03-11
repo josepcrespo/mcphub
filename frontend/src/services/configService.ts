@@ -25,6 +25,7 @@ export interface SystemConfig {
     azureOpenaiApiKey?: string;
     azureOpenaiApiVersion?: string;
     azureOpenaiEmbeddingDeployment?: string;
+    embeddingMaxTokens?: number;
   };
   nameSeparator?: string;
   auth?: {

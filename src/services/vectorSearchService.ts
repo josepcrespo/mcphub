@@ -4,6 +4,10 @@ import { Tool } from '../types/index.js';
 import { getAppDataSource, isDatabaseConnected, initializeDatabase } from '../db/connection.js';
 import { getSmartRoutingConfig, type SmartRoutingConfig } from '../utils/smartRouting.js';
 import { toFloat32Array } from '../utils/base64.js';
+import {
+  truncateToTokenLimit,
+  getModelDefaultTokenLimit,
+} from '../utils/tokenTruncation.js';
 import OpenAI from 'openai';
 import axios from 'axios';
 
@@ -48,6 +52,17 @@ const generateAzureOpenAIEmbedding = async (
   const url = `${endpoint}/openai/deployments/${encodeURIComponent(
     azureConfig.embeddingDeployment,
   )}/embeddings?api-version=${encodeURIComponent(azureConfig.apiVersion)}`;
+
+  // Truncate text to the model's token limit before sending to Azure OpenAI.
+  // Azure deployment names are arbitrary user-defined identifiers (e.g. "my-embeddings"),
+  // not recognizable OpenAI model names. Azure OpenAI uses OpenAI models internally
+  // (e.g. text-embedding-3-small) so they share the same cl100k_base BPE tokenizer.
+  // Use the dedicated azureOpenaiEmbeddingModel field (the actual underlying OpenAI model name)
+  // so that truncation uses the correct token limit and tokenizer family.
+  const embeddingModel = smartRoutingConfig.azureOpenaiEmbeddingModel || 'text-embedding-3-small';
+  const azureMaxTokens =
+    smartRoutingConfig.embeddingMaxTokens ?? getModelDefaultTokenLimit(embeddingModel);
+  text = await truncateToTokenLimit(text, azureMaxTokens, embeddingModel, smartRoutingConfig.openaiApiKey);
 
   const response = await axios.post(
     url,
@@ -342,8 +357,21 @@ async function generateEmbedding(text: string): Promise<number[]> {
     return generateFallbackEmbedding(text);
   }
 
-  // Truncate text if it's too long (OpenAI has token limits)
-  const truncatedText = text.length > 8000 ? text.substring(0, 8000) : text;
+  // Truncate text to the model's token limit using precise tokenization.
+  // Apply a safety margin for providers where the local tokenizer may count
+  // slightly fewer tokens than the server-side tokenizer (e.g. SiliconFlow).
+  const TOKEN_SAFETY_FACTOR = 0.92; // 8% safety margin for token counting discrepancies
+  const isSiliconFlow = config.baseURL?.includes('siliconflow.cn');
+  const rawMaxTokens =
+    smartRoutingConfig.embeddingMaxTokens ?? getModelDefaultTokenLimit(config.embeddingModel);
+  const maxTokens = isSiliconFlow ? Math.floor(rawMaxTokens * TOKEN_SAFETY_FACTOR) : rawMaxTokens;
+  
+  const truncatedText = await truncateToTokenLimit(
+    text,
+    maxTokens,
+    config.embeddingModel,
+    config.apiKey,
+  );
 
   // Determine encoding format based on configuration
   const encodingFormatSetting = smartRoutingConfig.embeddingEncodingFormat || 'auto';

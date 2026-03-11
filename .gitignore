@@ -28,3 +28,6 @@ coverage/
 
 data/
 temp-test-config/
+
+# GitGuardian cache
+.cache_ggshield

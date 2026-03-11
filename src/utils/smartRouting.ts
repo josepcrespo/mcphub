@@ -17,12 +17,27 @@ export interface SmartRoutingConfig {
   azureOpenaiApiVersion?: string;
   azureOpenaiEmbeddingDeployment?: string;
   /**
+   * The actual underlying OpenAI model name deployed in Azure (e.g. "text-embedding-3-small").
+   * Azure deployment names are arbitrary and not recognized by the tokenizer; this field
+   * provides the real model name so that token truncation uses the correct limit and
+   * tokenizer family (cl100k_base BPE for all text-embedding-* models).
+   */
+  azureOpenaiEmbeddingModel?: string;
+  /**
    * When enabled, search_tools returns only tool name and description (without full inputSchema).
    * A new describe_tool endpoint is provided to get the full tool schema on demand.
    * This reduces token usage for AI clients that don't need all tool parameters upfront.
    * Default: false (returns full tool schemas in search_tools for backward compatibility)
    */
   progressiveDisclosure?: boolean;
+  /**
+   * Maximum number of tokens allowed when truncating tool descriptions before generating
+   * embeddings. Overrides the per-model default from getModelDefaultTokenLimit().
+   *
+   * Priority: EMBEDDING_MAX_TOKENS env var → smartRouting.embeddingMaxTokens setting → model default.
+   * Useful for local inference servers with a batch_size lower than the model's official limit.
+   */
+  embeddingMaxTokens?: number;
 }
 
 /**
@@ -134,6 +149,13 @@ export async function getSmartRoutingConfig(): Promise<SmartRoutingConfig> {
       expandEnvVars,
     ),
 
+    azureOpenaiEmbeddingModel: getConfigValue(
+      [process.env.AZURE_OPENAI_EMBEDDING_MODEL],
+      smartRoutingSettings.azureOpenaiEmbeddingModel,
+      '',
+      expandEnvVars,
+    ),
+
     // Progressive disclosure - when enabled, search_tools returns minimal info
     // and describe_tool is used to get full schema
     progressiveDisclosure: getConfigValue(
@@ -141,6 +163,18 @@ export async function getSmartRoutingConfig(): Promise<SmartRoutingConfig> {
       smartRoutingSettings.progressiveDisclosure,
       false,
       parseBooleanEnvVar,
+    ),
+
+    // Maximum tokens for text truncation before generating embeddings.
+    // undefined means "use the per-model default" (see getModelDefaultTokenLimit).
+    embeddingMaxTokens: getConfigValue<number | undefined>(
+      [process.env.EMBEDDING_MAX_TOKENS],
+      smartRoutingSettings.embeddingMaxTokens,
+      undefined,
+      (value: unknown) => {
+        const parsed = parseInt(String(value), 10);
+        return Number.isNaN(parsed) || parsed <= 0 ? undefined : parsed;
+      },
     ),
   };
 }
