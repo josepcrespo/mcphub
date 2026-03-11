@@ -1157,12 +1157,16 @@ export const updateSystemConfig = async (req: Request, res: Response): Promise<v
               return;
             }
           } else {
-            const currentOpenAiKey =
-              smartRouting.openaiApiKey || systemConfig.smartRouting.openaiApiKey;
-            const currentOpenaiApiBaseUrl =
-              smartRouting.openaiApiBaseUrl || systemConfig.smartRouting.openaiApiBaseUrl;
-            const currentOpenaiApiEmbeddingModel =
-              smartRouting.openaiApiEmbeddingModel || systemConfig.smartRouting.openaiApiEmbeddingModel;
+            // Get current OpenAI config values, preferring new values from request
+            const currentOpenAiKey = typeof smartRouting.openaiApiKey === 'string'
+              ? smartRouting.openaiApiKey.trim()
+              : (systemConfig.smartRouting.openaiApiKey || '').trim();
+            const currentOpenaiApiBaseUrl = typeof smartRouting.openaiApiBaseUrl === 'string'
+              ? smartRouting.openaiApiBaseUrl.trim()
+              : (systemConfig.smartRouting.openaiApiBaseUrl || '').trim();
+            const currentOpenaiApiEmbeddingModel = typeof smartRouting.openaiApiEmbeddingModel === 'string'
+              ? smartRouting.openaiApiEmbeddingModel.trim()
+              : (systemConfig.smartRouting.openaiApiEmbeddingModel || '').trim();
 
             if (!currentOpenAiKey || !currentOpenaiApiBaseUrl || !currentOpenaiApiEmbeddingModel) {
               res.status(400).json({

@@ -796,13 +796,19 @@ const SettingsPage: React.FC = () => {
           );
         }
       } else {
-        const currentOpenaiApiKey =
-          tempSmartRoutingConfig.openaiApiKey || smartRoutingConfig.openaiApiKey;
-        const currentOpenaiApiBaseUrl =
-          tempSmartRoutingConfig.openaiApiBaseUrl || smartRoutingConfig.openaiApiBaseUrl;
-        const currentOpenaiApiEmbeddingModel =
-          tempSmartRoutingConfig.openaiApiEmbeddingModel ||
-          smartRoutingConfig.openaiApiEmbeddingModel;
+        // Get current OpenAI config values with explicit type checking and trim
+        const currentOpenaiApiKey = (typeof tempSmartRoutingConfig.openaiApiKey === 'string'
+          ? tempSmartRoutingConfig.openaiApiKey
+          : smartRoutingConfig.openaiApiKey || ''
+        ).trim();
+        const currentOpenaiApiBaseUrl = (typeof tempSmartRoutingConfig.openaiApiBaseUrl === 'string'
+          ? tempSmartRoutingConfig.openaiApiBaseUrl
+          : smartRoutingConfig.openaiApiBaseUrl || ''
+        ).trim();
+        const currentOpenaiApiEmbeddingModel = (typeof tempSmartRoutingConfig.openaiApiEmbeddingModel === 'string'
+          ? tempSmartRoutingConfig.openaiApiEmbeddingModel
+          : smartRoutingConfig.openaiApiEmbeddingModel || ''
+        ).trim();
 
         if (!currentOpenaiApiKey) {
           missingFields.push(t('settings.openaiApiKey') || 'OpenAI API Key');
