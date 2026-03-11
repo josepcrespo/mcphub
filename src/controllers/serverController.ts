@@ -1157,10 +1157,15 @@ export const updateSystemConfig = async (req: Request, res: Response): Promise<v
           } else {
             const currentOpenAiKey =
               smartRouting.openaiApiKey || systemConfig.smartRouting.openaiApiKey;
-            if (!currentOpenAiKey) {
+            const currentOpenaiApiBaseUrl =
+              smartRouting.openaiApiBaseUrl || systemConfig.smartRouting.openaiApiBaseUrl;
+            const currentOpenaiApiEmbeddingModel =
+              smartRouting.openaiApiEmbeddingModel || systemConfig.smartRouting.openaiApiEmbeddingModel;
+
+            if (!currentOpenAiKey || !currentOpenaiApiBaseUrl || !currentOpenaiApiEmbeddingModel) {
               res.status(400).json({
                 message:
-                  'Smart routing cannot be enabled without OpenAI API key. Please provide an OpenAI API key.',
+                  'Smart routing cannot be enabled without OpenAI configuration. Please provide API key, API base URL, and embedding model.',
               });
               return;
             }

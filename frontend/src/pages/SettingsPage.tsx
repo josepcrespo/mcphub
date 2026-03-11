@@ -747,8 +747,20 @@ const SettingsPage: React.FC = () => {
       } else {
         const currentOpenaiApiKey =
           tempSmartRoutingConfig.openaiApiKey || smartRoutingConfig.openaiApiKey;
+        const currentOpenaiApiBaseUrl =
+          tempSmartRoutingConfig.openaiApiBaseUrl || smartRoutingConfig.openaiApiBaseUrl;
+        const currentOpenaiApiEmbeddingModel =
+          tempSmartRoutingConfig.openaiApiEmbeddingModel ||
+          smartRoutingConfig.openaiApiEmbeddingModel;
+
         if (!currentOpenaiApiKey) {
           missingFields.push(t('settings.openaiApiKey') || 'OpenAI API Key');
+        }
+        if (!currentOpenaiApiBaseUrl) {
+          missingFields.push(t('settings.openaiApiBaseUrl') || 'OpenAI API Base URL');
+        }
+        if (!currentOpenaiApiEmbeddingModel) {
+          missingFields.push(t('settings.openaiApiEmbeddingModel') || 'OpenAI Embedding Model');
         }
       }
 
