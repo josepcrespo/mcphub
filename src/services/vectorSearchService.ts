@@ -366,12 +366,22 @@ async function generateEmbedding(text: string): Promise<number[]> {
     smartRoutingConfig.embeddingMaxTokens ?? getModelDefaultTokenLimit(config.embeddingModel);
   const maxTokens = isSiliconFlow ? Math.floor(rawMaxTokens * TOKEN_SAFETY_FACTOR) : rawMaxTokens;
   
-  const truncatedText = await truncateToTokenLimit(
-    text,
-    maxTokens,
-    config.embeddingModel,
-    config.apiKey,
-  );
+  let truncatedText: string;
+  try {
+    truncatedText = await truncateToTokenLimit(
+      text,
+      maxTokens,
+      config.embeddingModel,
+      config.apiKey,
+    );
+  } catch (truncationError: any) {
+    console.warn(
+      `Token truncation failed for model ${config.embeddingModel}: ${
+        truncationError?.message ?? String(truncationError)
+      }. Using original text.`,
+    );
+    truncatedText = text;
+  }
 
   // Determine encoding format based on configuration
   const encodingFormatSetting = smartRoutingConfig.embeddingEncodingFormat || 'auto';

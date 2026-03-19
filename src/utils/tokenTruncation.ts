@@ -176,9 +176,12 @@ async function truncateWithHFTokenizer(
     const truncatedIds = ids.slice(0, maxTokens);
     return (await tokenizer.decode(truncatedIds, { skip_special_tokens: true })) as string;
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // HuggingFace Hub may be unreachable in some environments (e.g. certain regions
+    // where hf.co is blocked). Fall back to a conservative character-based heuristic
+    // (~3 chars per token) so that embedding generation can continue.
     console.warn(
-      `Failed to load or use HuggingFace tokenizer for model '${model}', falling back to heuristic truncation:`,
-      error,
+      `HuggingFace tokenizer download failed for model "${model}": ${message}. Falling back to character-based truncation.`,
     );
     return truncateWithHeuristic(text, maxTokens);
   }

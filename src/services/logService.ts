@@ -133,6 +133,15 @@ class LogService {
 
     // Handle objects
     if (typeof arg === 'object') {
+      // Handle Error instances specially: their message/stack properties are
+      // non-enumerable, so JSON.stringify(error) would produce "{}".
+      if (arg instanceof Error) {
+        const lines = [`${arg.name}: ${arg.message}`];
+        if (arg.stack) {
+          lines.push(arg.stack);
+        }
+        return { text: lines.join('\n') };
+      }
       try {
         return { text: JSON.stringify(arg, null, 2) };
       } catch (e) {
