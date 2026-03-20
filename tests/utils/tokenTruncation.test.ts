@@ -417,3 +417,115 @@ describe('truncateToTokenLimit – HuggingFace tokenizer error handling', () => 
     30000,
   );
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Three-tier fallback: official HF → hf-mirror.com → heuristic
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('truncateToTokenLimit – HuggingFace three-tier fallback', () => {
+  afterEach(() => {
+    jest.resetModules();
+  });
+
+  it('falls back to hf-mirror.com when official HuggingFace Hub fails', async () => {
+    // Shared env object: its remoteHost is mutated by getHFTokenizer before each download attempt
+    const mockEnv = { remoteHost: 'https://huggingface.co/' };
+
+    // Minimal mock tokenizer: callable as function + has decode method
+    const mockDecode = jest.fn().mockImplementation(async (ids: number[]) => 'x'.repeat(ids.length));
+    const mockTokenizerFn = jest.fn().mockImplementation(async (text: string) => ({
+      input_ids: { data: new Int32Array(Array.from({ length: text.length }, (_, i) => i + 1)) },
+    }));
+    (mockTokenizerFn as any).decode = mockDecode;
+
+    jest.doMock('@huggingface/transformers', () => ({
+      env: mockEnv,
+      AutoTokenizer: {
+        from_pretrained: jest.fn().mockImplementation(async () => {
+          // Fail only for the official host; succeed for hf-mirror.com
+          if (mockEnv.remoteHost.includes('huggingface.co')) {
+            throw new Error('Connection refused: huggingface.co is blocked');
+          }
+          return mockTokenizerFn;
+        }),
+      },
+    }));
+
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const maxTokens = 5;
+    const text = 'a'.repeat(20); // 20 chars > maxTokens * 3 = 15
+
+    const { truncateToTokenLimit: truncate } = await import('../../src/utils/tokenTruncation.js');
+    const result = await truncate(text, maxTokens, 'BAAI/bge-m3');
+
+    // Should have warned about official HF failure and mirror retry
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('HuggingFace Hub unreachable'));
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Retrying with hf-mirror.com'));
+
+    // Should NOT have warned about mirror failure (mirror succeeded)
+    const allWarnings = warnSpy.mock.calls.map((call) => call[0] as string);
+    expect(allWarnings.some((msg) => msg.includes('hf-mirror.com also failed'))).toBe(false);
+
+    // Mirror tokenizer was used: result length should be <= maxTokens (1 token per char in mock)
+    expect(result.length).toBeLessThanOrEqual(maxTokens);
+
+    warnSpy.mockRestore();
+  });
+
+  it('falls back to heuristic when both HuggingFace Hub and hf-mirror.com fail', async () => {
+    const mockEnv = { remoteHost: 'https://huggingface.co/' };
+
+    jest.doMock('@huggingface/transformers', () => ({
+      env: mockEnv,
+      AutoTokenizer: {
+        from_pretrained: jest.fn().mockRejectedValue(new Error('All hosts unreachable')),
+      },
+    }));
+
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const maxTokens = 10;
+    const longText = 'a'.repeat(100); // 100 chars > maxTokens * 3 = 30
+
+    const { truncateToTokenLimit: truncate } = await import('../../src/utils/tokenTruncation.js');
+    const result = await truncate(longText, maxTokens, 'BAAI/bge-m3');
+
+    // Both tier-1 and tier-2 warnings should have been logged
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('HuggingFace Hub unreachable'));
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('hf-mirror.com also failed'));
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Falling back to character-based heuristic truncation'),
+    );
+
+    // Result should be heuristic truncation: exactly maxTokens * 3 chars
+    expect(result.length).toBeLessThanOrEqual(maxTokens * 3);
+    expect(result.length).toBeLessThan(longText.length);
+
+    warnSpy.mockRestore();
+  });
+
+  it('short text is returned unchanged even when all tokenizer hosts fail', async () => {
+    const mockEnv = { remoteHost: 'https://huggingface.co/' };
+
+    jest.doMock('@huggingface/transformers', () => ({
+      env: mockEnv,
+      AutoTokenizer: {
+        from_pretrained: jest.fn().mockRejectedValue(new Error('Network unavailable')),
+      },
+    }));
+
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const maxTokens = 100;
+    const shortText = 'hello world'; // 11 chars, well under maxTokens * 3 = 300
+
+    const { truncateToTokenLimit: truncate } = await import('../../src/utils/tokenTruncation.js');
+    const result = await truncate(shortText, maxTokens, 'BAAI/bge-m3');
+
+    // Heuristic: text fits within maxTokens * 3, so returned as-is
+    expect(result).toBe(shortText);
+
+    warnSpy.mockRestore();
+  });
+});

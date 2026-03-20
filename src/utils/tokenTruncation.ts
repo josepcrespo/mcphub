@@ -99,27 +99,42 @@ async function truncateWithGptTokenizer(text: string, maxTokens: number): Promis
 // Branch 2 — HuggingFace / BGE: AutoTokenizer (no ONNX, pure JS tokenisation)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Tokenizer instances are cached in memory to avoid repeated HF Hub downloads
+// Primary and mirror endpoints for tokenizer downloads.
+// The mirror is used as a fallback for regions where huggingface.co is blocked (e.g. China).
+const HF_OFFICIAL_HOST = 'https://huggingface.co/';
+const HF_MIRROR_HOST = 'https://hf-mirror.com/';
+
+// Cache key includes the remote host so a failed attempt from one endpoint
+// does not prevent a successful download from the other.
 const tokenizerCache = new Map<string, ReturnType<typeof import('@huggingface/transformers')['AutoTokenizer']['from_pretrained']> extends Promise<infer T> ? T : never>();
 
 /**
- * Fetches or retrieves a cached HuggingFace tokenizer for a given model.
+ * Fetches or retrieves a cached HuggingFace tokenizer for a given model,
+ * downloading it from the specified remote host.
  *
- * The tokenizer is downloaded from HuggingFace Hub (public models like BAAI/bge-m3
- * do not require authentication). Once downloaded, the tokenizer is cached in memory
- * to avoid redundant network requests on subsequent calls.
+ * Models like BAAI/bge-m3 are public and do not require authentication.
+ * The tokenizer is cached per (modelId, remoteHost) pair to allow independent
+ * retries against the official host and the mirror without cross-contamination.
  *
- * @param modelId  The fully-qualified HuggingFace Hub model ID (e.g., "BAAI/bge-m3").
- * @returns        The cached or freshly-downloaded tokenizer instance.
+ * @param modelId     The fully-qualified HuggingFace Hub model ID (e.g., "BAAI/bge-m3").
+ * @param remoteHost  The base URL of the host to download from.
+ * @returns           The cached or freshly-downloaded tokenizer instance.
  */
- 
-async function getHFTokenizer(modelId: string): Promise<any> {
-  if (!tokenizerCache.has(modelId)) {
-    const { AutoTokenizer } = await import('@huggingface/transformers');
-    const tokenizer = await AutoTokenizer.from_pretrained(modelId);
-    tokenizerCache.set(modelId, tokenizer);
+async function getHFTokenizer(modelId: string, remoteHost: string): Promise<any> {
+  const cacheKey = `${modelId}@${remoteHost}`;
+  if (!tokenizerCache.has(cacheKey)) {
+    const { AutoTokenizer, env } = await import('@huggingface/transformers');
+    const previousHost = env.remoteHost;
+    try {
+      env.remoteHost = remoteHost;
+      const tokenizer = await AutoTokenizer.from_pretrained(modelId);
+      tokenizerCache.set(cacheKey, tokenizer);
+    } finally {
+      // Always restore the original host to avoid side effects on concurrent calls
+      env.remoteHost = previousHost;
+    }
   }
-  return tokenizerCache.get(modelId);
+  return tokenizerCache.get(cacheKey);
 }
 
 /**
@@ -145,10 +160,15 @@ function getHFModelId(model: string): string {
 /**
  * Truncates text using a HuggingFace AutoTokenizer (BAAI/BGE and other transformer models).
  *
- * Leverages the @huggingface/transformers library to tokenize input text using
+ * Tries to leverage the @huggingface/transformers library to tokenize input text using
  * the model's own SentencePiece or WordPiece tokenizer, then decodes a truncated
  * token sequence back to text. This provides exact tokenization matching the model's
  * vocabulary and behavior, with tokenizer instances cached to avoid repeated downloads.
+ * 
+ * Uses a three-tier fallback strategy to ensure robustness across all deployment environments:
+ *   1. Official HuggingFace Hub (huggingface.co)
+ *   2. hf-mirror.com — accessible in regions where huggingface.co is blocked (e.g. China)
+ *   3. Conservative character-based heuristic (~3 chars per token)
  *
  * @param text       The input text to truncate.
  * @param maxTokens  The maximum number of tokens allowed.
@@ -160,9 +180,10 @@ async function truncateWithHFTokenizer(
   maxTokens: number,
   model: string,
 ): Promise<string> {
-  try {
-    const modelId = getHFModelId(model);
-    const tokenizer = await getHFTokenizer(modelId);
+  const modelId = getHFModelId(model);
+
+  // Helper: apply token-level truncation using a downloaded tokenizer instance.
+  const tokenizeAndTruncate = async (tokenizer: any): Promise<string> => {
     // Tokenize without automatic truncation so we can apply the exact limit
     const encoded = await tokenizer(text, { padding: false, truncation: false });
     // input_ids.data is BigInt64Array or Int32Array depending on the model/environment
@@ -175,16 +196,34 @@ async function truncateWithHFTokenizer(
     }
     const truncatedIds = ids.slice(0, maxTokens);
     return (await tokenizer.decode(truncatedIds, { skip_special_tokens: true })) as string;
+  };
+
+  // Tier 1: Official HuggingFace Hub
+  try {
+    const tokenizer = await getHFTokenizer(modelId, HF_OFFICIAL_HOST);
+    return await tokenizeAndTruncate(tokenizer);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    // HuggingFace Hub may be unreachable in some environments (e.g. certain regions
-    // where hf.co is blocked). Fall back to a conservative character-based heuristic
-    // (~3 chars per token) so that embedding generation can continue.
     console.warn(
-      `HuggingFace tokenizer download failed for model "${model}": ${message}. Falling back to character-based truncation.`,
+      `HuggingFace Hub unreachable for model "${model}" (${modelId}): ${message}. Retrying with hf-mirror.com...`,
     );
-    return truncateWithHeuristic(text, maxTokens);
   }
+
+  // Tier 2: hf-mirror.com (accessible in regions where huggingface.co is blocked)
+  try {
+    const tokenizer = await getHFTokenizer(modelId, HF_MIRROR_HOST);
+    return await tokenizeAndTruncate(tokenizer);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(
+      `hf-mirror.com also failed for model "${model}" (${modelId}): ${message}. Falling back to character-based heuristic truncation.`,
+    );
+  }
+
+  // Tier 3: Conservative character-based heuristic (~3 chars per token).
+  // This ensures embedding generation can proceed even when all tokenizer
+  // download attempts fail.
+  return truncateWithHeuristic(text, maxTokens);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

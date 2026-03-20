@@ -378,9 +378,12 @@ async function generateEmbedding(text: string): Promise<number[]> {
     console.warn(
       `Token truncation failed for model ${config.embeddingModel}: ${
         truncationError?.message ?? String(truncationError)
-      }. Using original text.`,
+      }. Falling back to character-based truncation.`,
     );
-    truncatedText = text;
+    // As a fallback, use a conservative character-based heuristic (~3 chars/token)
+    // to prevent oversized text from causing a failure in the embedding API call.
+    const maxChars = maxTokens * 3;
+    truncatedText = text.length <= maxChars ? text : text.substring(0, maxChars);
   }
 
   // Determine encoding format based on configuration
