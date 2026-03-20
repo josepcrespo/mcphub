@@ -6,6 +6,7 @@ import { getSmartRoutingConfig, type SmartRoutingConfig } from '../utils/smartRo
 import { toFloat32Array } from '../utils/base64.js';
 import {
   truncateToTokenLimit,
+  truncateWithHeuristic,
   getModelDefaultTokenLimit,
 } from '../utils/tokenTruncation.js';
 import OpenAI from 'openai';
@@ -380,10 +381,9 @@ async function generateEmbedding(text: string): Promise<number[]> {
         truncationError?.message ?? String(truncationError)
       }. Falling back to character-based truncation.`,
     );
-    // As a fallback, use a conservative character-based heuristic (~3 chars/token)
+    // As a fallback, use the shared conservative character-based heuristic (~3 chars/token)
     // to prevent oversized text from causing a failure in the embedding API call.
-    const maxChars = maxTokens * 3;
-    truncatedText = text.length <= maxChars ? text : text.substring(0, maxChars);
+    truncatedText = truncateWithHeuristic(text, maxTokens);
   }
 
   // Determine encoding format based on configuration

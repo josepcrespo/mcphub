@@ -65,7 +65,7 @@ function isBgeM3Model(model: string): boolean {
   return model.toLowerCase().includes('bge-m3');
 }
 
-function truncateWithHeuristic(text: string, maxTokens: number): string {
+export function truncateWithHeuristic(text: string, maxTokens: number): string {
   const maxChars = maxTokens * 3;
   return text.length <= maxChars ? text : text.substring(0, maxChars);
 }
@@ -108,6 +108,48 @@ const HF_MIRROR_HOST = 'https://hf-mirror.com/';
 // does not prevent a successful download from the other.
 const tokenizerCache = new Map<string, ReturnType<typeof import('@huggingface/transformers')['AutoTokenizer']['from_pretrained']> extends Promise<infer T> ? T : never>();
 
+// In-flight download promises: deduplicates concurrent requests for the same key,
+// ensuring only one download attempt is made even when multiple callers arrive simultaneously.
+const tokenizerInFlight = new Map<string, Promise<any>>();
+
+// Serial lock protecting the env.remoteHost mutation window.
+// Since env.remoteHost is a module-level global shared by all AutoTokenizer calls,
+// concurrent downloads targeting different hosts would overwrite each other's setting.
+// Serialising through this lock ensures only one download mutates the global at a time.
+let envLock: Promise<void> = Promise.resolve();
+
+// Host health state: tracks hosts that have recently failed so that downstream
+// callers skip them during the TTL window instead of re-attempting and logging noise.
+// The problem is structural (regional network blocking), not transient, so the TTL
+// is intentionally long to avoid repeated futile connection attempts.
+const HF_HOST_UNHEALTHY_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+interface HostHealth {
+  unhealthyUntil: number;
+  lastError?: string;
+}
+
+const hostHealth = new Map<string, HostHealth>();
+
+function isHostUnhealthy(host: string): boolean {
+  const health = hostHealth.get(host);
+  if (!health) return false;
+  if (Date.now() < health.unhealthyUntil) return true;
+  hostHealth.delete(host); // TTL expired — allow retry
+  return false;
+}
+
+function markHostUnhealthy(host: string, error: unknown): void {
+  hostHealth.set(host, {
+    unhealthyUntil: Date.now() + HF_HOST_UNHEALTHY_TTL_MS,
+    lastError: error instanceof Error ? error.message : String(error),
+  });
+}
+
+function markHostHealthy(host: string): void {
+  hostHealth.delete(host);
+}
+
 /**
  * Fetches or retrieves a cached HuggingFace tokenizer for a given model,
  * downloading it from the specified remote host.
@@ -116,25 +158,53 @@ const tokenizerCache = new Map<string, ReturnType<typeof import('@huggingface/tr
  * The tokenizer is cached per (modelId, remoteHost) pair to allow independent
  * retries against the official host and the mirror without cross-contamination.
  *
+ * Concurrent calls for the same (modelId, remoteHost) pair share a single in-flight
+ * promise so the tokenizer is downloaded exactly once. The env.remoteHost mutation
+ * is protected by a serial lock to prevent concurrent downloads from interfering.
+ *
  * @param modelId     The fully-qualified HuggingFace Hub model ID (e.g., "BAAI/bge-m3").
  * @param remoteHost  The base URL of the host to download from.
  * @returns           The cached or freshly-downloaded tokenizer instance.
  */
 async function getHFTokenizer(modelId: string, remoteHost: string): Promise<any> {
   const cacheKey = `${modelId}@${remoteHost}`;
-  if (!tokenizerCache.has(cacheKey)) {
+
+  // Fast path: cached tokenizer is available
+  if (tokenizerCache.has(cacheKey)) {
+    return tokenizerCache.get(cacheKey)!;
+  }
+
+  // Return in-flight promise to deduplicate concurrent downloads for the same key
+  if (tokenizerInFlight.has(cacheKey)) {
+    return tokenizerInFlight.get(cacheKey)!;
+  }
+
+  // Serialize the env.remoteHost mutation through a module-level lock so that
+  // concurrent downloads for different hosts do not overwrite each other's host setting.
+  const downloadPromise = (async () => {
+    const prevLock = envLock;
+    let releaseLock!: () => void;
+    envLock = new Promise<void>((resolve) => {
+      releaseLock = resolve;
+    });
+    await prevLock;
+
     const { AutoTokenizer, env } = await import('@huggingface/transformers');
     const previousHost = env.remoteHost;
     try {
       env.remoteHost = remoteHost;
       const tokenizer = await AutoTokenizer.from_pretrained(modelId);
       tokenizerCache.set(cacheKey, tokenizer);
+      return tokenizer;
     } finally {
-      // Always restore the original host to avoid side effects on concurrent calls
       env.remoteHost = previousHost;
+      releaseLock();
+      tokenizerInFlight.delete(cacheKey);
     }
-  }
-  return tokenizerCache.get(cacheKey);
+  })();
+
+  tokenizerInFlight.set(cacheKey, downloadPromise);
+  return downloadPromise;
 }
 
 /**
@@ -198,25 +268,40 @@ async function truncateWithHFTokenizer(
     return (await tokenizer.decode(truncatedIds, { skip_special_tokens: true })) as string;
   };
 
-  // Tier 1: Official HuggingFace Hub
-  try {
-    const tokenizer = await getHFTokenizer(modelId, HF_OFFICIAL_HOST);
-    return await tokenizeAndTruncate(tokenizer);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+  // Tier 1: Official HuggingFace Hub — skipped when marked unhealthy (TTL active) to avoid
+  // log noise and latency in deployments where the host is permanently blocked (e.g. China).
+  if (isHostUnhealthy(HF_OFFICIAL_HOST)) {
+    const health = hostHealth.get(HF_OFFICIAL_HOST)!;
     console.warn(
-      `HuggingFace Hub unreachable for model "${model}" (${modelId}): ${message}. Retrying with hf-mirror.com...`,
+      `Skipping HuggingFace Hub (marked unhealthy until ${new Date(health.unhealthyUntil).toISOString()}, TTL active). Trying hf-mirror.com directly for model "${model}" (${modelId}).`,
     );
+  } else {
+    try {
+      const tokenizer = await getHFTokenizer(modelId, HF_OFFICIAL_HOST);
+      const result = await tokenizeAndTruncate(tokenizer);
+      markHostHealthy(HF_OFFICIAL_HOST);
+      return result;
+    } catch (error) {
+      markHostUnhealthy(HF_OFFICIAL_HOST, error);
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(
+        `HuggingFace Hub unreachable for model "${model}" (${modelId}): ${message}. Retrying with hf-mirror.com...`,
+        error,
+      );
+    }
   }
 
   // Tier 2: hf-mirror.com (accessible in regions where huggingface.co is blocked)
   try {
     const tokenizer = await getHFTokenizer(modelId, HF_MIRROR_HOST);
-    return await tokenizeAndTruncate(tokenizer);
+    const result = await tokenizeAndTruncate(tokenizer);
+    markHostHealthy(HF_MIRROR_HOST);
+    return result;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.warn(
       `hf-mirror.com also failed for model "${model}" (${modelId}): ${message}. Falling back to character-based heuristic truncation.`,
+      error,
     );
   }
 
