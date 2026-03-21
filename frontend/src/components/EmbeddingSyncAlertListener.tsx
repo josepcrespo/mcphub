@@ -16,7 +16,14 @@ const EmbeddingSyncAlertListener = () => {
   useEffect(() => {
     let eventSource: EventSource | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let isMounted = true;
+    const abortController = new AbortController();
+
+    const clearReconnectTimer = () => {
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+    };
 
     const shouldSuppressToast = (message: string): boolean => {
       const now = Date.now();
@@ -46,12 +53,13 @@ const EmbeddingSyncAlertListener = () => {
     };
 
     const connect = () => {
-      if (!isMounted) {
+      if (abortController.signal.aborted) {
         return;
       }
 
       const token = getToken();
       if (!token) {
+        clearReconnectTimer();
         reconnectTimer = setTimeout(connect, RECONNECT_DELAY_MS);
         return;
       }
@@ -59,7 +67,7 @@ const EmbeddingSyncAlertListener = () => {
       eventSource = new EventSource(getApiUrl(`/logs/stream?token=${token}`));
 
       eventSource.onmessage = (event) => {
-        if (!isMounted) {
+        if (abortController.signal.aborted) {
           return;
         }
 
@@ -81,7 +89,7 @@ const EmbeddingSyncAlertListener = () => {
       };
 
       eventSource.onerror = () => {
-        if (!isMounted) {
+        if (abortController.signal.aborted) {
           return;
         }
 
@@ -90,6 +98,7 @@ const EmbeddingSyncAlertListener = () => {
           eventSource = null;
         }
 
+        clearReconnectTimer();
         reconnectTimer = setTimeout(connect, RECONNECT_DELAY_MS);
       };
     };
@@ -97,13 +106,11 @@ const EmbeddingSyncAlertListener = () => {
     connect();
 
     return () => {
-      isMounted = false;
+      abortController.abort();
       if (eventSource) {
         eventSource.close();
       }
-      if (reconnectTimer) {
-        clearTimeout(reconnectTimer);
-      }
+      clearReconnectTimer();
     };
   }, [showToast]);
 
