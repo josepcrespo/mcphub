@@ -577,24 +577,26 @@ async function generateEmbedding(text: string): Promise<number[]> {
 
   const debugCurl = buildEmbeddingsDebugCurl(config.baseURL, embeddingPayload);
 
-  console.log(
-    `[Embedding] HTTP request details: ${JSON.stringify(
-      {
-        url: `${(config.baseURL || 'https://api.openai.com/v1').replace(/\/+$/, '')}/embeddings`,
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${maskApiKey(config.apiKey || '')}`,
-          'Content-Type': 'application/json',
+  if (process.env.DEBUG === 'true') {
+    console.log(
+      `[Embedding] HTTP request details: ${JSON.stringify(
+        {
+          url: `${(config.baseURL || 'https://api.openai.com/v1').replace(/\/+$/, '')}/embeddings`,
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${maskApiKey(config.apiKey || '')}`,
+            'Content-Type': 'application/json',
+          },
+          payload: embeddingPayload,
         },
-        payload: embeddingPayload,
-      },
-      null,
-      2,
-    )}`,
-  );
-  console.log(
-    `[Embedding] Reproducible curl (copy/paste and replace <YOUR_API_KEY>):\n${debugCurl}`,
-  );
+        null,
+        2,
+      )}`,
+    );
+    console.log(
+      `[Embedding] Reproducible curl (copy/paste and replace <YOUR_API_KEY>):\n${debugCurl}`,
+    );
+  }
 
   console.log(
     `[Embedding] API request → model=${config.embeddingModel}, encoding_format=${encodingFormat}, input_length=${truncatedText.length} chars | input_preview: "${truncatedText.substring(0, 200).replace(/\s+/g, ' ')}"`,
