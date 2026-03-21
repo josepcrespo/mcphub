@@ -18,6 +18,7 @@ import LogsPage from './pages/LogsPage';
 import ActivityPage from './pages/ActivityPage';
 import PromptsPage from './pages/PromptsPage';
 import ResourcesPage from './pages/ResourcesPage';
+import EmbeddingSyncAlertListener from './components/EmbeddingSyncAlertListener';
 import { getBasePath } from './utils/runtime';
 
 // Helper component to redirect cloud server routes to market
@@ -35,6 +36,7 @@ function App() {
           <ToastProvider>
             <SettingsProvider>
               <Router basename={basename}>
+                <EmbeddingSyncAlertListener />
                 <Routes>
                   {/* 公共路由 */}
                   <Route path="/login" element={<LoginPage />} />
