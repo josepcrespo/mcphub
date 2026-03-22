@@ -213,6 +213,8 @@ MCPHub uses different retry strategies depending on the error type, reflecting t
 
 This approach is especially practical for rate-limited providers like SiliconFlow (10 RPM), because:
 
+Important: in MCPHub testing, SiliconFlow has been observed to return HTTP 403 with the message "RPM limit exceeded. Please complete identity verification to lift the restriction." on the 11th request made within one minute or less. This behavior is treated here as an observed runtime characteristic, not as a documented contract, because SiliconFlow's official documentation does not currently document this specific limit or response pattern.
+
 1. The first 403/429 is examined immediately for `Retry-After`.
 2. If missing, the system waits 63 seconds (guaranteeing the 60-second hard window has passed).
 3. If the next attempt is rate-limited again, MCPHub repeats the same rule: `Retry-After` if present, otherwise another 63-second wait.
@@ -251,6 +253,8 @@ For transient server errors:
 3. Does not apply the 62-second rate-limit cooldown.
 
 #### Example Retry Sequence for SiliconFlow (10 RPM, no Retry-After header)
+
+This example reflects the observed SiliconFlow behavior described above, including the undocumented 11th-request-within-a-minute 403 response seen in practice. It should not be read as an official provider guarantee.
 
 ```
 Attempt 1: 403/429 → No Retry-After found → Wait 63s → Retry
