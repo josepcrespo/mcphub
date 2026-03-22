@@ -38,9 +38,9 @@ export const streamLogs = (req: Request, res: Response): void => {
     const logs = logService.getLogs();
     res.write(`data: ${JSON.stringify({ type: 'initial', logs })}\n\n`);
 
-    // Subscribe to log events
-    const unsubscribe = logService.subscribe((log) => {
-      res.write(`data: ${JSON.stringify({ type: 'log', log })}\n\n`);
+    // Subscribe to log and auxiliary stream events
+    const unsubscribe = logService.subscribeToStream((event) => {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
     });
 
     // Handle client disconnect

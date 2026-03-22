@@ -10,6 +10,7 @@ import {
   getModelDefaultTokenLimit,
 } from '../utils/tokenTruncation.js';
 import { safeStringify } from '../utils/serialization.js';
+import logService from './logService.js';
 import OpenAI from 'openai';
 import axios from 'axios';
 
@@ -964,6 +965,9 @@ function generateFallbackEmbedding(text: string): number[] {
 export const saveToolsAsVectorEmbeddings = async (
   serverName: string,
   tools: Tool[],
+  options: {
+    reportProgress?: boolean;
+  } = {},
 ): Promise<void> => {
   try {
     if (tools.length === 0) {
@@ -994,6 +998,17 @@ export const saveToolsAsVectorEmbeddings = async (
 
     let hasCheckedVectorDimensions = false;
     let vectorDimensionsReset = false;
+
+    const shouldReport = options.reportProgress === true;
+    const emitProgress = (current: number, status: 'started' | 'in_progress' | 'completed' | 'error') => {
+      if (!shouldReport) return;
+      logService.emitStreamEvent({
+        type: 'embedding-sync-progress',
+        progress: { serverName, current, total: tools.length, status },
+      });
+    };
+
+    emitProgress(0, 'started');
 
     for (let _toolIdx = 0; _toolIdx < tools.length; _toolIdx++) {
       const tool = tools[_toolIdx];
@@ -1044,6 +1059,7 @@ export const saveToolsAsVectorEmbeddings = async (
           },
           persistedEmbeddingModel, // Store the model based on the active embedding provider
         );
+        emitProgress(_toolIdx + 1, _toolIdx + 1 === tools.length ? 'completed' : 'in_progress');
       } catch (error: any) {
         const status = extractErrorStatus(error);
         const message = error instanceof Error ? error.message : String(error);
@@ -1051,6 +1067,7 @@ export const saveToolsAsVectorEmbeddings = async (
         console.warn(
           `[EMBED_SYNC_ERROR] Server "${serverName}" failed while embedding tool "${tool.name}" (status=${status ?? 'unknown'}): ${message}`,
         );
+        emitProgress(_toolIdx, 'error');
         throw error;
       }
     }

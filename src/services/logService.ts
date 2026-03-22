@@ -12,6 +12,23 @@ interface LogEntry {
   processId?: string;
 }
 
+export interface EmbeddingSyncProgressPayload {
+  serverName: string;
+  current: number;
+  total: number;
+  status: 'started' | 'in_progress' | 'completed' | 'error';
+}
+
+export type LogStreamEvent =
+  | {
+      type: 'log';
+      log: LogEntry;
+    }
+  | {
+      type: 'embedding-sync-progress';
+      progress: EmbeddingSyncProgressPayload;
+    };
+
 // ANSI color codes for console output
 const colors = {
   reset: '\x1b[0m',
@@ -208,6 +225,7 @@ class LogService {
 
     // Emit the log event for SSE subscribers
     this.logEmitter.emit('log', log);
+    this.logEmitter.emit('stream-event', { type: 'log', log } satisfies LogStreamEvent);
   }
 
   // Get all logs
@@ -221,6 +239,17 @@ class LogService {
     return () => {
       this.logEmitter.off('log', callback);
     };
+  }
+
+  public subscribeToStream(callback: (event: LogStreamEvent) => void): () => void {
+    this.logEmitter.on('stream-event', callback);
+    return () => {
+      this.logEmitter.off('stream-event', callback);
+    };
+  }
+
+  public emitStreamEvent(event: Exclude<LogStreamEvent, { type: 'log' }>): void {
+    this.logEmitter.emit('stream-event', event);
   }
 
   // Clear all logs

@@ -10,7 +10,9 @@
     "changePassword": "修改密码",
     "toggleSidebar": "切换侧边栏",
     "welcomeUser": "欢迎, {{username}}",
-    "name": "MCPHub"
+    "name": "MCPHub",
+    "embeddingSyncProgress": "正在为 {{serverName}} 创建嵌入",
+    "embeddingSyncProgressAriaLabel": "正在为 {{serverName}} 创建嵌入：已完成 {{current}}/{{total}}"
   },
   "about": {
     "title": "关于",

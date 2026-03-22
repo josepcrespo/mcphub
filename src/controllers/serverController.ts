@@ -277,10 +277,12 @@ export const createServer = async (req: Request, res: Response): Promise<void> =
 
     const result = await addServer(name, config);
     if (result.success) {
-      notifyToolChanged();
       res.json({
         success: true,
         message: 'Server added successfully',
+      });
+      notifyToolChanged(name, { reportEmbeddingProgress: true }).catch((error) => {
+        console.error('Failed to trigger embedding sync for created server:', error);
       });
     } else {
       res.status(400).json({
@@ -439,11 +441,6 @@ export const batchCreateServers = async (req: Request, res: Response): Promise<v
       }
     }
 
-    // Notify tool changes if any server was added successfully
-    if (successCount > 0) {
-      notifyToolChanged();
-    }
-
     // Prepare response
     const response: ApiResponse<BatchCreateServersResponse> = {
       success: successCount > 0, // Success if at least one server was created
@@ -458,6 +455,20 @@ export const batchCreateServers = async (req: Request, res: Response): Promise<v
     // Return 207 Multi-Status if there were partial failures, 200 if all succeeded, 400 if all failed
     const statusCode = failureCount === 0 ? 200 : successCount === 0 ? 400 : 207;
     res.status(statusCode).json(response);
+
+    if (successCount > 0) {
+      const successfulServerNames = results
+        .filter((result): result is BatchServerResult & { name: string; success: true } => result.success)
+        .map((result) => result.name);
+
+      Promise.all(
+        successfulServerNames.map((serverName) =>
+          notifyToolChanged(serverName, { reportEmbeddingProgress: true }),
+        ),
+      ).catch((error) => {
+        console.error('Failed to trigger embedding sync for batch-created servers:', error);
+      });
+    }
   } catch (error) {
     console.error('Batch create servers error:', error);
     res.status(500).json({

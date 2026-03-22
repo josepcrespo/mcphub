@@ -10,7 +10,9 @@
     "changePassword": "Change Password",
     "toggleSidebar": "Toggle Sidebar",
     "welcomeUser": "Welcome, {{username}}",
-    "name": "MCPHub"
+    "name": "MCPHub",
+    "embeddingSyncProgress": "Embeddings for {{serverName}}",
+    "embeddingSyncProgressAriaLabel": "Creating embeddings for {{serverName}}: {{current}} of {{total}} completed"
   },
   "about": {
     "title": "About",

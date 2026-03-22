@@ -10,7 +10,9 @@
     "changePassword": "Şifre Değiştir",
     "toggleSidebar": "Kenar Çubuğunu Aç/Kapat",
     "welcomeUser": "Hoş geldin, {{username}}",
-    "name": "MCPHub"
+    "name": "MCPHub",
+    "embeddingSyncProgress": "{{serverName}} için gömme oluşturuluyor",
+    "embeddingSyncProgressAriaLabel": "{{serverName}} için gömme oluşturuluyor: {{total}} adımdan {{current}} tamamlandı"
   },
   "about": {
     "title": "Hakkında",
