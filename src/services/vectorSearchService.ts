@@ -983,6 +983,11 @@ export const saveToolsAsVectorEmbeddings = async (
     }
 
     const config = await getOpenAIConfig();
+    const embeddingProvider = smartRoutingConfig.embeddingProvider || 'openai';
+    const persistedEmbeddingModel =
+      embeddingProvider === 'azure_openai'
+        ? smartRoutingConfig.azureOpenaiEmbeddingModel || 'text-embedding-3-small'
+        : config.embeddingModel;
     const vectorRepository = getRepositoryFactory(
       'vectorEmbeddings',
     )() as VectorEmbeddingRepository;
@@ -1037,7 +1042,7 @@ export const saveToolsAsVectorEmbeddings = async (
             description: tool.description,
             inputSchema: tool.inputSchema,
           },
-          config.embeddingModel, // Store the model used for this embedding
+          persistedEmbeddingModel, // Store the model based on the active embedding provider
         );
       } catch (error: any) {
         const status = extractErrorStatus(error);
