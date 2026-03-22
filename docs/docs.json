@@ -28,6 +28,7 @@
               "features/server-management",
               "features/group-management",
               "features/smart-routing",
+              "features/embedding-lifecycle",
               "features/oauth"
             ]
           },

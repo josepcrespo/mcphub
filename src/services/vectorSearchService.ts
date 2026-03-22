@@ -148,7 +148,7 @@ const BASE64_EMBEDDING_SUPPORTED_PROVIDERS = [
 // directly to 63 seconds, stays there while rate-limit responses continue, and resets back
 // to the base level after 63 seconds without new 403/429 errors. Retry-After, when present,
 // still takes precedence over all local timing decisions.
-// DEFAULT: 0 ms. The retry logic (Retry-After header → 62s fallback) already handles
+// DEFAULT: 0 ms. The retry logic (Retry-After header → 63s fallback) already handles
 // rate limit recovery automatically. The adaptive pacing then self-calibrates upward
 // after each 403/429 and persists for subsequent calls. A non-zero baseline is only
 // needed when a provider requires a fixed minimum interval between requests.
@@ -172,7 +172,7 @@ const SAFE_PACING_COOLDOWN_MS = 63 * 1000;
 // These constants define the retry behavior for failed API calls.
 // Strategy:
 //   403/429 with Retry-After: always honor the server's specified wait, no time budget applied.
-//   403/429 without Retry-After: use 62s cooldown per retry, budget-limited to 5 minutes total.
+//   403/429 without Retry-After: use 63s cooldown per retry, budget-limited to 5 minutes total.
 //   503/504: fixed exponential backoff sequence (4s, 8s, 16s, 30s, 60s, 120s, 240s), exactly 7 attempts.
 //            No time budget imposed — all 7 attempts will be made regardless of total elapsed time.
 /** Maximum total retry time for 403/429 rate-limit retries (ms). */
