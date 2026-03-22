@@ -7,6 +7,12 @@ import { getSystemConfigDao } from '../dao/DaoFactory.js';
 export interface SmartRoutingConfig {
   enabled: boolean;
   dbUrl: string;
+  /**
+   * Base delay in milliseconds applied between provider-backed embedding requests.
+   * A value of 0 disables the baseline wait but still allows adaptive pacing to
+   * increase automatically after retryable throttling responses.
+   */
+  basePacingDelayMs?: number;
   embeddingProvider?: 'openai' | 'azure_openai';
   embeddingEncodingFormat?: 'auto' | 'base64' | 'float';
   openaiApiBaseUrl: string;
@@ -68,6 +74,16 @@ export async function getSmartRoutingConfig(): Promise<SmartRoutingConfig> {
 
     // Database configuration
     dbUrl: getConfigValue([process.env.DB_URL], smartRoutingSettings.dbUrl, '', expandEnvVars),
+
+    basePacingDelayMs: getConfigValue<number>(
+      [process.env.SMART_ROUTING_BASE_PACING_DELAY_MS],
+      smartRoutingSettings.basePacingDelayMs,
+      0,
+      (value: unknown) => {
+        const parsed = parseInt(String(value), 10);
+        return Number.isNaN(parsed) || parsed < 0 ? 0 : parsed;
+      },
+    ),
 
     embeddingProvider: getConfigValue(
       [process.env.SMART_ROUTING_EMBEDDING_PROVIDER],

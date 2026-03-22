@@ -413,6 +413,17 @@ function parseEmbeddingMaxTokensForUpdate(
   return result !== current ? result : undefined;
 }
 
+function parseBasePacingDelayForUpdate(
+  rawValue: string,
+  currentValue: number | null | undefined,
+): number | null | undefined {
+  const trimmed = rawValue.trim();
+  const parsed = trimmed ? parseInt(trimmed, 10) : NaN;
+  const result = trimmed && !isNaN(parsed) && parsed >= 0 ? parsed : null;
+  const current = currentValue ?? null;
+  return result !== current ? result : undefined;
+}
+
 const SettingsPage: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -432,6 +443,7 @@ const SettingsPage: React.FC = () => {
 
   const [tempSmartRoutingConfig, setTempSmartRoutingConfig] = useState<{
     dbUrl: string;
+    basePacingDelayMs: string;
     embeddingProvider: 'openai' | 'azure_openai';
     embeddingEncodingFormat: 'auto' | 'base64' | 'float';
     openaiApiBaseUrl: string;
@@ -446,6 +458,7 @@ const SettingsPage: React.FC = () => {
     embeddingMaxTokens: string;
   }>({
     dbUrl: '',
+    basePacingDelayMs: '',
     embeddingProvider: 'openai',
     embeddingEncodingFormat: 'auto',
     openaiApiBaseUrl: '',
@@ -525,6 +538,10 @@ const SettingsPage: React.FC = () => {
     if (smartRoutingConfig) {
       setTempSmartRoutingConfig({
         dbUrl: smartRoutingConfig.dbUrl || '',
+        basePacingDelayMs:
+          smartRoutingConfig.basePacingDelayMs != null
+            ? String(smartRoutingConfig.basePacingDelayMs)
+            : '',
         embeddingProvider:
           smartRoutingConfig.embeddingProvider === 'azure_openai' ? 'azure_openai' : 'openai',
         embeddingEncodingFormat:
@@ -657,6 +674,7 @@ const SettingsPage: React.FC = () => {
   const handleSmartRoutingConfigChange = (
     key:
       | 'dbUrl'
+      | 'basePacingDelayMs'
       | 'embeddingProvider'
       | 'embeddingEncodingFormat'
       | 'openaiApiBaseUrl'
@@ -837,6 +855,13 @@ const SettingsPage: React.FC = () => {
       if (tempSmartRoutingConfig.dbUrl !== smartRoutingConfig.dbUrl) {
         updates.dbUrl = tempSmartRoutingConfig.dbUrl;
       }
+      const parsedBasePacingDelay = parseBasePacingDelayForUpdate(
+        tempSmartRoutingConfig.basePacingDelayMs,
+        smartRoutingConfig.basePacingDelayMs,
+      );
+      if (parsedBasePacingDelay !== undefined) {
+        updates.basePacingDelayMs = parsedBasePacingDelay;
+      }
       if (tempSmartRoutingConfig.embeddingProvider !== smartRoutingConfig.embeddingProvider) {
         updates.embeddingProvider = tempSmartRoutingConfig.embeddingProvider;
       }
@@ -906,6 +931,13 @@ const SettingsPage: React.FC = () => {
 
     if (tempSmartRoutingConfig.dbUrl !== smartRoutingConfig.dbUrl) {
       updates.dbUrl = tempSmartRoutingConfig.dbUrl;
+    }
+    const parsedBasePacingDelay = parseBasePacingDelayForUpdate(
+      tempSmartRoutingConfig.basePacingDelayMs,
+      smartRoutingConfig.basePacingDelayMs,
+    );
+    if (parsedBasePacingDelay !== undefined) {
+      updates.basePacingDelayMs = parsedBasePacingDelay;
     }
     if (tempSmartRoutingConfig.embeddingProvider !== smartRoutingConfig.embeddingProvider) {
       updates.embeddingProvider = tempSmartRoutingConfig.embeddingProvider;
@@ -1541,7 +1573,7 @@ const SettingsPage: React.FC = () => {
               </div>
 
               {/* Smart Routing Required Fields Information */}
-              <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
+              <div className="p-3 bg-blue-300 border border-blue-200 rounded-md">
                 <p className="text-sm text-blue-800">
                   {t('settings.smartRoutingRequiredFields')}
                 </p>
@@ -1791,6 +1823,47 @@ const SettingsPage: React.FC = () => {
                   </div>
                 </>
               )}
+
+              <div className="p-3 bg-gray-50 rounded-md">
+                <div className="mb-2">
+                  <h3 className="font-medium text-gray-700">
+                    {t('settings.basePacingDelayMs')}
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {t('settings.basePacingDelayMsDescription')}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    min="0"
+                    step="1000"
+                    value={tempSmartRoutingConfig.basePacingDelayMs}
+                    onChange={(e) =>
+                      handleSmartRoutingConfigChange('basePacingDelayMs', e.target.value)
+                    }
+                    placeholder={
+                      t('settings.basePacingDelayMsPlaceholder') || 'Empty = default 8000 ms'
+                    }
+                    className="flex-1 mt-1 block w-full py-2 px-3 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm form-input"
+                    disabled={loading}
+                  />
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  {(() => {
+                    const trimmedValue = tempSmartRoutingConfig.basePacingDelayMs.trim();
+                    if (!trimmedValue) {
+                      return t('settings.basePacingDelayMsAuto', { value: 0 });
+                    }
+                    if (trimmedValue === '0') {
+                      return t('settings.basePacingDelayMsZero');
+                    }
+                    return t('settings.basePacingDelayMsOverride');
+                  })()}
+                </p>
+
+
+              </div>
 
               <div className="p-3 bg-gray-50 rounded-md">
                 <div className="mb-2">

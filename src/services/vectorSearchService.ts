@@ -113,35 +113,108 @@ const generateAzureOpenAIEmbedding = async (
   return embedding;
 };
 
-// Constants for embedding models
-const EMBEDDING_DIMENSIONS_SMALL = 1536; // OpenAI's text-embedding-3-small outputs 1536 dimensions
-const EMBEDDING_DIMENSIONS_LARGE = 3072; // OpenAI's text-embedding-3-large outputs 3072 dimensions
-const BGE_DIMENSIONS = 1024; // BAAI/bge-m3 outputs 1024 dimensions
-const GEMINI_EMBEDDING_DIMENSIONS = 3072; // Google Gemini gemini-embedding-001 default output dimensions
-const FALLBACK_DIMENSIONS = 100; // Fallback implementation uses 100 dimensions
+// ============================================================================
+// Embedding Model Dimensions
+// ============================================================================
+// These constants define the vector dimension output for different embedding models.
+// When the model changes, the entire vector database may need reindexing.
+/** OpenAI text-embedding-3-small model produces 1536-dimensional vectors */
+const EMBEDDING_DIMENSIONS_SMALL = 1536;
+/** OpenAI text-embedding-3-large model produces 3072-dimensional vectors */
+const EMBEDDING_DIMENSIONS_LARGE = 3072;
+/** BAAI/bge-m3 model produces 1024-dimensional vectors */
+const BGE_DIMENSIONS = 1024;
+/** Google Gemini gemini-embedding-001 model produces 3072-dimensional vectors by default */
+const GEMINI_EMBEDDING_DIMENSIONS = 3072;
+/** Fallback embedding method (used when no API is configured) produces 100-dimensional vectors */
+const FALLBACK_DIMENSIONS = 100;
 
-// List of base URLs that support base64 embeddings
+// ============================================================================
+// Provider Support Configuration
+// ============================================================================
+/** Base URLs that support base64 embedding encoding (more efficient than float arrays) */
 const BASE64_EMBEDDING_SUPPORTED_PROVIDERS = [
   'https://api.openai.com',
   'https://api.siliconflow.cn',
   'https://openrouter.ai',
 ];
 
-const SAFE_BASE_PACING_DELAY_MS = 8000;
-const SAFE_PACING_DELAY_STEP_MS = 2000;
-const SAFE_MAX_PACING_DELAY_MS = 30000;
-const SAFE_PACING_COOLDOWN_MS = 5 * 60 * 1000;
+// ============================================================================
+// Adaptive Pacing Configuration (Rate Limiting)
+// ============================================================================
+// These constants control the dynamic rate limiting mechanism that prevents
+// hitting provider rate limits. Rate limits are typically measured in 1-minute windows (RPM).
+// When 403/429 errors occur, the system enters a binary protection mode: pacing jumps
+// directly to 63 seconds, stays there while rate-limit responses continue, and resets back
+// to the base level after 63 seconds without new 403/429 errors. Retry-After, when present,
+// still takes precedence over all local timing decisions.
+// DEFAULT: 0 ms. The retry logic (Retry-After header → 62s fallback) already handles
+// rate limit recovery automatically. The adaptive pacing then self-calibrates upward
+// after each 403/429 and persists for subsequent calls. A non-zero baseline is only
+// needed when a provider requires a fixed minimum interval between requests.
+/** Initial delay between embedding API calls (ms). Increases on rate-limit errors. */
+const SAFE_BASE_PACING_DELAY_MS = 0;
+/** Increment to add when pacing delay increases (ms).
+ * Set equal to the max delay so the first 403/429 immediately enables full protection. */
+const SAFE_PACING_DELAY_STEP_MS = 63 * 1000;
+/** Maximum allowed pacing delay between API calls (ms).
+ * Set to 63 seconds: 60s RPM window + 3s safety margin. */
+const SAFE_MAX_PACING_DELAY_MS = 63 * 1000;
+/** Time to wait before allowing pacing delay to reset back to base level (ms).
+ * Set to 63 seconds: 60s for the RPM window reset + 3s safety margin.
+ * Aligned with how providers measure rate limits (requests per minute).
+ * After 63s without new 403/429 errors, the rate limit bucket has fully reset. */
+const SAFE_PACING_COOLDOWN_MS = 63 * 1000;
 
-const RETRY_MAX_ATTEMPTS = 4;
-const RETRY_BASE_DELAY_MS = 4000;
-const RETRY_MAX_DELAY_MS = 30000;
+// ============================================================================
+// Retry Policy Configuration
+// ============================================================================
+// These constants define the retry behavior for failed API calls.
+// Strategy:
+//   403/429 with Retry-After: always honor the server's specified wait, no time budget applied.
+//   403/429 without Retry-After: use 62s cooldown per retry, budget-limited to 5 minutes total.
+//   503/504: fixed exponential backoff sequence (4s, 8s, 16s, 30s, 60s, 120s, 240s), exactly 7 attempts.
+//            No time budget imposed — all 7 attempts will be made regardless of total elapsed time.
+/** Maximum total retry time for 403/429 rate-limit retries (ms). */
+const MAX_TOTAL_RETRY_TIME_MS = 5 * 60 * 1000; // 5 minutes
+/** Fixed exponential backoff wait sequence for 503/504 errors in milliseconds (7 attempts). */
+const RETRY_EXPONENTIAL_SEQUENCE_MS = [4000, 8000, 16000, 30000, 60000, 120000, 240000];
+/** Random jitter added to each retry delay to prevent thundering herd (ms) */
 const RETRY_JITTER_MS = 1000;
+/** HTTP status codes that trigger automatic retry (rate limits, server errors) */
 const RETRYABLE_STATUS_CODES = new Set([403, 429, 503, 504]);
 
+// ============================================================================
+// Runtime State for Pacing and Sync Management
+// ============================================================================
+// Current adaptive pacing delay between embedding API calls (ms).
+// Increases when rate-limit errors occur, decreases after cooldown period.
 let adaptivePacingDelayMs = SAFE_BASE_PACING_DELAY_MS;
+
+// Current configured baseline pacing delay between provider-backed embedding calls (ms).
+// This can be overridden from Smart Routing settings and may be set to 0.
+let configuredBasePacingDelayMs = SAFE_BASE_PACING_DELAY_MS;
+
+// Timestamp (ms) when pacing delay was last increased.
+// Used to calculate cooldown before allowing delay to decrease.
 let lastPacingIncreaseAt = 0;
+
+// Flag indicating a full embeddings resync has been scheduled.
+// Prevents multiple redundant resync operations.
 let fullResyncScheduled = false;
+
+// Flag indicating a full embeddings resync is currently in progress.
+// Prevents concurrent resync operations.
 let fullResyncInProgress = false;
+
+// Timestamp (ms) of the last embedding API call.
+// Used to calculate required wait time before next call in the queue.
+let lastEmbeddingCallAt = 0;
+
+// Promise chain that serializes all embedding API calls through a single queue.
+// Each call waits for the previous one to complete before starting.
+// Ensures that adaptive pacing is applied consistently across all parallel sync operations.
+let embeddingQueueTail: Promise<void> = Promise.resolve();
 
 const sleep = async (ms: number): Promise<void> => {
   if (ms <= 0) {
@@ -167,16 +240,69 @@ const isRetryableStatus = (status?: number): boolean => {
   return typeof status === 'number' && RETRYABLE_STATUS_CODES.has(status);
 };
 
+/**
+ * Extract Retry-After header value from error response and convert to milliseconds.
+ * Handles both seconds (numeric) and HTTP-date formats.
+ * Returns undefined if no valid Retry-After header is found.
+ */
+const extractRetryAfterMs = (error: any): number | undefined => {
+  const retryAfter =
+    error?.response?.headers?.['retry-after'] ||
+    error?.response?.headers?.['Retry-After'] ||
+    error?.headers?.['retry-after'] ||
+    error?.headers?.['Retry-After'];
+
+  if (!retryAfter) {
+    return undefined;
+  }
+
+  // If it's numeric, treat as seconds and convert to milliseconds
+  const numericValue = parseInt(String(retryAfter), 10);
+  if (!isNaN(numericValue) && numericValue > 0) {
+    return numericValue * 1000;
+  }
+
+  // If it's an HTTP date, parse it and calculate delay until that time
+  try {
+    const retryAtTime = new Date(retryAfter).getTime();
+    if (!isNaN(retryAtTime)) {
+      const delayMs = Math.max(0, retryAtTime - Date.now());
+      return delayMs > 0 ? delayMs : undefined;
+    }
+  } catch (e) {
+    // Ignore parsing errors
+  }
+
+  return undefined;
+};
+
+const applyConfiguredBasePacingDelay = (basePacingDelayMs?: number): void => {
+  const normalizedBaseDelay =
+    typeof basePacingDelayMs === 'number' && !Number.isNaN(basePacingDelayMs) && basePacingDelayMs >= 0
+      ? Math.floor(basePacingDelayMs)
+      : SAFE_BASE_PACING_DELAY_MS;
+  const previousBaseDelay = configuredBasePacingDelayMs;
+
+  configuredBasePacingDelayMs = normalizedBaseDelay;
+
+  if (
+    adaptivePacingDelayMs === previousBaseDelay ||
+    adaptivePacingDelayMs < configuredBasePacingDelayMs
+  ) {
+    adaptivePacingDelayMs = configuredBasePacingDelayMs;
+  }
+};
+
 const getAdaptivePacingDelayMs = (): number => {
   if (
     lastPacingIncreaseAt > 0 &&
     Date.now() - lastPacingIncreaseAt > SAFE_PACING_COOLDOWN_MS &&
-    adaptivePacingDelayMs > SAFE_BASE_PACING_DELAY_MS
+    adaptivePacingDelayMs > configuredBasePacingDelayMs
   ) {
-    adaptivePacingDelayMs = Math.max(
-      SAFE_BASE_PACING_DELAY_MS,
-      adaptivePacingDelayMs - SAFE_PACING_DELAY_STEP_MS,
-    );
+    // After the cooldown period (aligned with rate limit window resets),
+    // immediately restore pacing to base level instead of decrementing gradually.
+    // This allows faster recovery and more throughput once the provider's rate limit resets.
+    adaptivePacingDelayMs = configuredBasePacingDelayMs;
   }
 
   return adaptivePacingDelayMs;
@@ -201,37 +327,105 @@ const executeWithRetry = async <T>(
   operation: () => Promise<T>,
   context: { provider: string; model?: string; baseURL?: string },
 ): Promise<T> => {
-  for (let attempt = 1; attempt <= RETRY_MAX_ATTEMPTS; attempt++) {
+  let totalRetryTimeMs = 0;
+  let attempt = 1;
+  let exponentialAttempt = 0;
+
+  while (true) {
     try {
       return await operation();
     } catch (error: any) {
       const status = extractErrorStatus(error);
       const isRetryable = isRetryableStatus(status);
-      const hasAttemptsLeft = attempt < RETRY_MAX_ATTEMPTS;
 
-      if (!isRetryable || !hasAttemptsLeft) {
+      if (!isRetryable) {
         throw error;
       }
 
+      let waitMs: number;
+
       if (status === 403 || status === 429) {
+        // STRATEGY FOR RATE LIMIT ERRORS (403/429):
+        // - With Retry-After header: always honor the server's instruction unconditionally.
+        //   Applying a self-imposed budget here would be counterproductive: if the server says
+        //   "wait 8 minutes", cutting it short means the next attempt would fail immediately again.
+        // - Without Retry-After header: use a 63s cooldown and apply the 5-minute budget as a
+        //   safety net to avoid retrying blindly forever.
         increaseAdaptivePacingDelay(status);
+        const retryAfterMs = extractRetryAfterMs(error);
+        if (retryAfterMs !== undefined && retryAfterMs > 0) {
+          // Server specified an explicit wait — honor it regardless of accumulated time.
+          waitMs = retryAfterMs;
+          console.warn(
+            `[Embedding][Retry] provider=${context.provider}, model=${context.model || 'unknown'}, baseURL=${context.baseURL || 'default'}, status=${status}, attempt=${attempt}, respecting Retry-After header: ${waitMs}ms`,
+          );
+        } else {
+          // No Retry-After header: use 63 second cooldown and apply the 5-minute safety budget.
+          waitMs = 63 * 1000;
+          console.warn(
+            `[Embedding][Retry] provider=${context.provider}, model=${context.model || 'unknown'}, baseURL=${context.baseURL || 'default'}, status=${status}, attempt=${attempt}, applying 63s rate-limit cooldown (no Retry-After header found)`,
+          );
+
+          if (totalRetryTimeMs + waitMs > MAX_TOTAL_RETRY_TIME_MS) {
+            const remainingMs = MAX_TOTAL_RETRY_TIME_MS - totalRetryTimeMs;
+            console.warn(
+              `[Embedding][Retry] Max retry time limit reached (no Retry-After). totalTime=${totalRetryTimeMs}ms, nextWait=${waitMs}ms, remaining=${remainingMs}ms, limit=${MAX_TOTAL_RETRY_TIME_MS}ms. Throwing error.`,
+            );
+            throw error;
+          }
+        }
+
+        totalRetryTimeMs += waitMs;
+      } else {
+        // STRATEGY FOR OTHER ERRORS (503, 504, etc):
+        // Fixed exponential sequence: 4s, 8s, 16s, 30s, 60s, 120s, 240s — exactly 7 attempts.
+        // No time budget imposed; all 7 attempts will be made regardless of total elapsed time.
+        if (exponentialAttempt >= RETRY_EXPONENTIAL_SEQUENCE_MS.length) {
+          console.warn(
+            `[Embedding][Retry] Exhausted all ${RETRY_EXPONENTIAL_SEQUENCE_MS.length} exponential backoff attempts. provider=${context.provider}, model=${context.model || 'unknown'}, status=${status}. Throwing error.`,
+          );
+          throw error;
+        }
+
+        waitMs = withJitter(RETRY_EXPONENTIAL_SEQUENCE_MS[exponentialAttempt]);
+        console.warn(
+          `[Embedding][Retry] provider=${context.provider}, model=${context.model || 'unknown'}, baseURL=${context.baseURL || 'default'}, status=${status}, attempt=${attempt} (exponential ${exponentialAttempt + 1}/${RETRY_EXPONENTIAL_SEQUENCE_MS.length}), waiting=${waitMs}ms`,
+        );
+        exponentialAttempt++;
       }
 
-      const exponentialDelayMs = Math.min(
-        RETRY_MAX_DELAY_MS,
-        RETRY_BASE_DELAY_MS * 2 ** (attempt - 1),
+      console.log(
+        `[Embedding][Retry] Attempt ${attempt} failed. Waiting ${waitMs}ms before retry...`,
       );
-      const waitMs = withJitter(exponentialDelayMs);
-
-      console.warn(
-        `[Embedding][Retry] provider=${context.provider}, model=${context.model || 'unknown'}, baseURL=${context.baseURL || 'default'}, status=${status ?? 'unknown'}, attempt=${attempt}/${RETRY_MAX_ATTEMPTS}, waiting=${waitMs}ms`,
-      );
-
       await sleep(waitMs);
+      attempt++;
     }
   }
+};
 
-  throw new Error('Retry loop ended unexpectedly');
+/**
+ * Serializes all embedding API calls through a single promise queue so that
+ * parallel sync operations cannot bypass the adaptive pacing delay.
+ */
+const withEmbeddingQueue = <T>(operation: () => Promise<T>): Promise<T> => {
+  const result = embeddingQueueTail.then(async () => {
+    const now = Date.now();
+    const elapsed = now - lastEmbeddingCallAt;
+    const pacingDelayMs = getAdaptivePacingDelayMs();
+    const waitMs = lastEmbeddingCallAt === 0 ? 0 : Math.max(0, pacingDelayMs - elapsed);
+    if (waitMs > 0) {
+      console.log(`[Embedding][Queue] Pacing wait ${waitMs}ms before next API call`);
+      await sleep(waitMs);
+    }
+    lastEmbeddingCallAt = Date.now();
+    return operation();
+  });
+  // Keep tail void-typed so the chain does not accumulate resolved values.
+  embeddingQueueTail = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
 };
 
 const scheduleFullEmbeddingResync = (reason: string): void => {
@@ -479,6 +673,7 @@ const supportBase64Embeddings = async (baseURL: string = ''): Promise<boolean> =
  */
 async function generateEmbedding(text: string): Promise<number[]> {
   const smartRoutingConfig = await getSmartRoutingConfig();
+  applyConfiguredBasePacingDelay(smartRoutingConfig.basePacingDelayMs);
   const provider = smartRoutingConfig.embeddingProvider || 'openai';
 
   // Normalize whitespace before generating the embedding (issue #639):
@@ -496,13 +691,15 @@ async function generateEmbedding(text: string): Promise<number[]> {
     }
 
     try {
-      return await executeWithRetry(
-        () => generateAzureOpenAIEmbedding(text, smartRoutingConfig),
-        {
-          provider: 'azure_openai',
-          model: smartRoutingConfig.azureOpenaiEmbeddingModel,
-          baseURL: azureConfig.endpoint,
-        },
+      return await withEmbeddingQueue(() =>
+        executeWithRetry(
+          () => generateAzureOpenAIEmbedding(text, smartRoutingConfig),
+          {
+            provider: 'azure_openai',
+            model: smartRoutingConfig.azureOpenaiEmbeddingModel,
+            baseURL: azureConfig.endpoint,
+          },
+        ),
       );
     } catch (error: any) {
       const status = extractErrorStatus(error);
@@ -604,18 +801,20 @@ async function generateEmbedding(text: string): Promise<number[]> {
   const _requestStart = Date.now();
   try {
     // Call OpenAI-compatible embeddings API with conservative retry/backoff policy.
-    const response = await executeWithRetry(
-      () =>
-        openai.embeddings.create({
-          model: embeddingPayload.model, // Modern model with better performance
-          encoding_format: embeddingPayload.encoding_format,
-          input: embeddingPayload.input,
-        }),
-      {
-        provider,
-        model: config.embeddingModel,
-        baseURL: config.baseURL,
-      },
+    const response = await withEmbeddingQueue(() =>
+      executeWithRetry(
+        () =>
+          openai.embeddings.create({
+            model: embeddingPayload.model,
+            encoding_format: embeddingPayload.encoding_format,
+            input: embeddingPayload.input,
+          }),
+        {
+          provider,
+          model: config.embeddingModel,
+          baseURL: config.baseURL,
+        },
+      ),
     );
     console.log(`[Embedding] API response OK in ${Date.now() - _requestStart}ms`);
 
@@ -638,9 +837,18 @@ async function generateEmbedding(text: string): Promise<number[]> {
     );
     console.warn(`Embedding error: ${message}`);
     console.warn(`[Embedding] Request took ${Date.now() - _requestStart}ms before failure`);
-    console.warn(
-      `[Embedding] Full error details: ${JSON.stringify(error, Object.getOwnPropertyNames(error))}`,
-    );
+    const errorDetails = {
+      name: (error as any)?.name,
+      message,
+      status,
+      code: (error as any)?.code,
+      responseStatus: (error as any)?.response?.status,
+      responseErrorMessage: (error as any)?.response?.data?.error?.message,
+      requestId:
+        (error as any)?.response?.headers?.['x-request-id'] ??
+        (error as any)?.response?.headers?.['request-id'],
+    };
+    console.warn(`[Embedding] Error details: ${safeStringify(errorDetails)}`);
 
     throw error;
   }
@@ -784,14 +992,6 @@ export const saveToolsAsVectorEmbeddings = async (
 
     for (let _toolIdx = 0; _toolIdx < tools.length; _toolIdx++) {
       const tool = tools[_toolIdx];
-
-      if (_toolIdx > 0) {
-        const pacingDelayMs = getAdaptivePacingDelayMs();
-        console.log(
-          `[Embedding][Throttle] Waiting ${pacingDelayMs}ms before tool ${_toolIdx + 1}/${tools.length} for server ${serverName}`,
-        );
-        await sleep(pacingDelayMs);
-      }
 
       // Create searchable text from tool information
       const searchableText = [

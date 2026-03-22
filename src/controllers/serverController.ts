@@ -987,6 +987,8 @@ export const updateSystemConfig = async (req: Request, res: Response): Promise<v
       smartRouting &&
       (typeof smartRouting.enabled === 'boolean' ||
         typeof smartRouting.dbUrl === 'string' ||
+        typeof smartRouting.basePacingDelayMs === 'number' ||
+        smartRouting.basePacingDelayMs === null ||
         typeof smartRouting.embeddingProvider === 'string' ||
         typeof smartRouting.embeddingEncodingFormat === 'string' ||
         typeof smartRouting.openaiApiBaseUrl === 'string' ||
@@ -1062,6 +1064,7 @@ export const updateSystemConfig = async (req: Request, res: Response): Promise<v
         smartRouting: {
           enabled: false,
           dbUrl: '',
+          basePacingDelayMs: undefined,
           embeddingProvider: 'openai',
           openaiApiBaseUrl: '',
           openaiApiKey: '',
@@ -1103,6 +1106,7 @@ export const updateSystemConfig = async (req: Request, res: Response): Promise<v
       systemConfig.smartRouting = {
         enabled: false,
         dbUrl: '',
+        basePacingDelayMs: undefined,
         embeddingProvider: 'openai',
         openaiApiBaseUrl: '',
         openaiApiKey: '',
@@ -1264,6 +1268,15 @@ export const updateSystemConfig = async (req: Request, res: Response): Promise<v
       }
       if (typeof smartRouting.dbUrl === 'string') {
         systemConfig.smartRouting.dbUrl = smartRouting.dbUrl?.trim();
+      }
+      if (
+        typeof smartRouting.basePacingDelayMs === 'number' &&
+        !isNaN(smartRouting.basePacingDelayMs) &&
+        smartRouting.basePacingDelayMs >= 0
+      ) {
+        systemConfig.smartRouting.basePacingDelayMs = Math.floor(smartRouting.basePacingDelayMs);
+      } else if (smartRouting.basePacingDelayMs === null) {
+        systemConfig.smartRouting.basePacingDelayMs = undefined;
       }
       if (typeof smartRouting.openaiApiBaseUrl === 'string') {
         systemConfig.smartRouting.openaiApiBaseUrl = smartRouting.openaiApiBaseUrl?.trim();

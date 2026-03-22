@@ -41,6 +41,109 @@ export const clearLogs = async (): Promise<void> => {
   }
 };
 
+/**
+ * Singleton SSE connection manager.  Maintains a single EventSource shared
+ * across all subscribers so that multiple components (e.g. the Logs page and
+ * the embedding-sync alert listener) reuse one HTTP connection.
+ */
+class LogStreamManager {
+  private eventSource: EventSource | null = null;
+  private subscribers = new Set<(event: MessageEvent) => void>();
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private openAttempts = 0;
+
+  /** Subscribe to incoming SSE messages.  Returns an unsubscribe callback. */
+  subscribe(callback: (event: MessageEvent) => void): () => void {
+    this.subscribers.add(callback);
+    if (this.subscribers.size === 1) {
+      // Reset attempts when first subscriber added
+      this.openAttempts = 0;
+      this.openEventSource();
+    }
+    return () => {
+      this.subscribers.delete(callback);
+      if (this.subscribers.size === 0) {
+        this.close();
+      }
+    };
+  }
+
+  private openEventSource() {
+    this.closeEventSource();
+    const token = getToken();
+
+    if (!token) {
+      console.warn('[LogStreamManager] No token available, scheduling reconnect...');
+      this.scheduleReconnect();
+      return;
+    }
+
+    try {
+      const url = getApiUrl(`/logs/stream?token=${token}`);
+      console.log('[LogStreamManager] Opening EventSource:', url);
+      this.eventSource = new EventSource(url);
+
+      this.eventSource.onmessage = (event) => {
+        this.subscribers.forEach((cb) => cb(event));
+      };
+
+      this.eventSource.onerror = () => {
+        console.warn('[LogStreamManager] EventSource error, attempting reconnect...');
+        this.closeEventSource();
+        if (this.subscribers.size > 0) {
+          this.scheduleReconnect();
+        }
+      };
+
+      // Reset attempts on successful connection
+      this.openAttempts = 0;
+      console.log('[LogStreamManager] EventSource opened successfully');
+    } catch (error) {
+      console.error('[LogStreamManager] Failed to open EventSource:', error);
+      this.closeEventSource();
+      if (this.subscribers.size > 0) {
+        this.scheduleReconnect();
+      }
+    }
+  }
+
+  private closeEventSource() {
+    if (this.eventSource) {
+      this.eventSource.close();
+      this.eventSource = null;
+    }
+  }
+
+  private scheduleReconnect() {
+    if (this.reconnectTimer !== null) return;
+
+    // Exponential backoff: 1s, 2s, 4s, 8s max
+    const delayMs = Math.min(1000 * Math.pow(2, this.openAttempts), 8000);
+    this.openAttempts++;
+
+    console.log(
+      `[LogStreamManager] Scheduling reconnect in ${delayMs}ms (attempt ${this.openAttempts})`,
+    );
+
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (this.subscribers.size > 0) {
+        this.openEventSource();
+      }
+    }, delayMs);
+  }
+
+  private close() {
+    this.closeEventSource();
+    if (this.reconnectTimer !== null) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+  }
+}
+
+export const logStreamManager = new LogStreamManager();
+
 // Hook to use logs with SSE streaming
 export const useLogs = () => {
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -48,65 +151,48 @@ export const useLogs = () => {
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
-    let eventSource: EventSource | null = null;
-    let isMounted = true;
+    let mounted = true;
 
-    const connectToLogStream = () => {
+    // Fetch initial logs
+    const loadInitialLogs = async () => {
       try {
-        // Close existing connection if any
-        if (eventSource) {
-          eventSource.close();
+        const initialLogs = await fetchLogs();
+        if (mounted) {
+          setLogs(initialLogs);
+          setLoading(false);
         }
-
-        // Get the authentication token
-        const token = getToken();
-        // Connect to SSE endpoint with auth token in URL
-        eventSource = new EventSource(getApiUrl(`/logs/stream?token=${token}`));
-
-        eventSource.onmessage = (event) => {
-          if (!isMounted) return;
-
-          try {
-            const data = JSON.parse(event.data);
-
-            if (data.type === 'initial') {
-              setLogs(data.logs);
-              setLoading(false);
-            } else if (data.type === 'log') {
-              setLogs((prevLogs) => [...prevLogs, data.log]);
-            }
-          } catch (err) {
-              console.error('Error parsing SSE message', { err });
-          }
-        };
-
-        eventSource.onerror = () => {
-          if (!isMounted) return;
-
-          if (eventSource) {
-            eventSource.close();
-            // Attempt to reconnect after a delay
-            setTimeout(connectToLogStream, 5000);
-          }
-
-          setError(new Error('Connection to log stream lost, attempting to reconnect...'));
-        };
       } catch (err) {
-        if (!isMounted) return;
-        setError(err instanceof Error ? err : new Error('Failed to connect to log stream'));
-        setLoading(false);
+        if (mounted) {
+          setError(err instanceof Error ? err : new Error('Failed to fetch logs'));
+          setLoading(false);
+        }
       }
     };
 
-    // Initial connection
-    connectToLogStream();
+    loadInitialLogs();
 
-    // Cleanup on unmount
-    return () => {
-      isMounted = false;
-      if (eventSource) {
-        eventSource.close();
+    // Subscribe to SSE stream for new logs
+    const handleMessage = (event: MessageEvent) => {
+      if (!mounted) return;
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'initial') {
+          // Skip initial event, we already have logs from fetchLogs()
+          return;
+        }
+        if (data.type === 'log') {
+          setLogs((prevLogs) => [...prevLogs, data.log]);
+        }
+      } catch (err) {
+        console.error('Error parsing SSE message', { err });
       }
+    };
+
+    const unsubscribe = logStreamManager.subscribe(handleMessage);
+
+    return () => {
+      mounted = false;
+      unsubscribe();
     };
   }, []);
 

@@ -99,6 +99,10 @@ body {
     0 2px 6px rgba(0, 0, 0, 0.1) !important;
 }
 
+.bg-blue-300 {
+  background-color: var(--color-blue-300);
+}
+
 .bg-custom-blue {
   background-color: #4a90e2;
 }

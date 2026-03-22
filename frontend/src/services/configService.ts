@@ -16,6 +16,7 @@ export interface SystemConfig {
   smartRouting?: {
     enabled?: boolean;
     dbUrl?: string;
+    basePacingDelayMs?: number;
     embeddingProvider?: 'openai' | 'azure_openai';
     embeddingEncodingFormat?: 'auto' | 'base64' | 'float';
     openaiApiBaseUrl?: string;

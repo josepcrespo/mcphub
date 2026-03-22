@@ -1,10 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { useToast } from '@/contexts/ToastContext';
-import { getApiUrl } from '@/utils/runtime';
-import { getToken } from '@/utils/interceptors';
+import { logStreamManager } from '@/services/logService';
 
 const EMBED_SYNC_ERROR_MARKER = '[EMBED_SYNC_ERROR]';
-const RECONNECT_DELAY_MS = 5000;
 const TOAST_DURATION_MS = 8000;
 const TOAST_DEDUPE_WINDOW_MS = 30000;
 
@@ -14,21 +12,11 @@ const EmbeddingSyncAlertListener = () => {
   const lastToastAtRef = useRef<number>(0);
 
   useEffect(() => {
-    let eventSource: EventSource | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    const abortController = new AbortController();
-
-    const clearReconnectTimer = () => {
-      if (reconnectTimer) {
-        clearTimeout(reconnectTimer);
-        reconnectTimer = null;
-      }
-    };
-
     const shouldSuppressToast = (message: string): boolean => {
       const now = Date.now();
       const isDuplicate =
-        message === lastToastMessageRef.current && now - lastToastAtRef.current < TOAST_DEDUPE_WINDOW_MS;
+        message === lastToastMessageRef.current &&
+        now - lastToastAtRef.current < TOAST_DEDUPE_WINDOW_MS;
 
       if (isDuplicate) {
         return true;
@@ -52,66 +40,19 @@ const EmbeddingSyncAlertListener = () => {
       showToast(toastMessage, 'error', TOAST_DURATION_MS);
     };
 
-    const connect = () => {
-      if (abortController.signal.aborted) {
-        return;
+    const handleMessage = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data?.type !== 'log') return;
+        const message = String(data?.log?.message || '');
+        if (!message.includes(EMBED_SYNC_ERROR_MARKER)) return;
+        handleEmbeddingSyncError(message);
+      } catch {
+        // Ignore malformed stream messages.
       }
-
-      const token = getToken();
-      if (!token) {
-        clearReconnectTimer();
-        reconnectTimer = setTimeout(connect, RECONNECT_DELAY_MS);
-        return;
-      }
-
-      eventSource = new EventSource(getApiUrl(`/logs/stream?token=${token}`));
-
-      eventSource.onmessage = (event) => {
-        if (abortController.signal.aborted) {
-          return;
-        }
-
-        try {
-          const data = JSON.parse(event.data);
-          if (data?.type !== 'log') {
-            return;
-          }
-
-          const message = String(data?.log?.message || '');
-          if (!message.includes(EMBED_SYNC_ERROR_MARKER)) {
-            return;
-          }
-
-          handleEmbeddingSyncError(message);
-        } catch {
-          // Ignore malformed stream messages.
-        }
-      };
-
-      eventSource.onerror = () => {
-        if (abortController.signal.aborted) {
-          return;
-        }
-
-        if (eventSource) {
-          eventSource.close();
-          eventSource = null;
-        }
-
-        clearReconnectTimer();
-        reconnectTimer = setTimeout(connect, RECONNECT_DELAY_MS);
-      };
     };
 
-    connect();
-
-    return () => {
-      abortController.abort();
-      if (eventSource) {
-        eventSource.close();
-      }
-      clearReconnectTimer();
-    };
+    return logStreamManager.subscribe(handleMessage);
   }, [showToast]);
 
   return null;

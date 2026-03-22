@@ -30,6 +30,7 @@ interface InstallConfig {
 interface SmartRoutingConfig {
   enabled: boolean;
   dbUrl: string;
+  basePacingDelayMs?: number;
   embeddingProvider?: 'openai' | 'azure_openai';
   embeddingEncodingFormat?: 'auto' | 'base64' | 'float';
   openaiApiBaseUrl: string;
@@ -185,6 +186,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
   const [smartRoutingConfig, setSmartRoutingConfig] = useState<SmartRoutingConfig>({
     enabled: false,
     dbUrl: '',
+    basePacingDelayMs: undefined,
     embeddingProvider: 'openai',
     embeddingEncodingFormat: 'auto',
     openaiApiBaseUrl: '',
@@ -250,6 +252,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({ children }) 
         setSmartRoutingConfig({
           enabled: data.data.systemConfig.smartRouting.enabled ?? false,
           dbUrl: data.data.systemConfig.smartRouting.dbUrl || '',
+          basePacingDelayMs: data.data.systemConfig.smartRouting.basePacingDelayMs,
           embeddingProvider:
             data.data.systemConfig.smartRouting.embeddingProvider === 'azure_openai'
               ? 'azure_openai'
