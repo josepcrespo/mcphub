@@ -250,7 +250,7 @@ For transient server errors:
 
 1. Uses a fixed exponential sequence: 4s, 8s, 16s, 30s, 60s, 120s, 240s — exactly 7 retry attempts.
 2. No time budget is imposed. All 7 attempts are always made, regardless of total elapsed time (~8 minutes maximum when the full sequence is exhausted).
-3. Does not apply the 62-second rate-limit cooldown.
+3. Does not apply the 63-second rate-limit cooldown.
 
 #### Example Retry Sequence for SiliconFlow (10 RPM, no Retry-After header)
 
