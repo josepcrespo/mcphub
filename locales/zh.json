@@ -645,7 +645,7 @@
     "openaiApiEmbeddingModel": "嵌入模型名称",
     "openaiApiEmbeddingModelPlaceholder": "text-embedding-3-small",
     "basePacingDelayMs": "基础节流延迟（毫秒）",
-    "basePacingDelayMsDescription": "向嵌入服务提供方发送请求之间的基础等待时间。默认为 0 — 系统自动管理限流：优先遵守 Retry-After 响应头，若无该头则等待 62 秒，并在每次 403/429 后自动提高节流延迟。仅当提供方要求固定最小请求间隔时才需设置非零值。",
+    "basePacingDelayMsDescription": "向嵌入服务提供方发送请求之间的基础等待时间。默认为 0 — 系统自动管理限流：优先遵守 Retry-After 响应头，若无该头则等待 63 秒，并在每次 403/429 后自动提高节流延迟。仅当提供方要求固定最小请求间隔时才需设置非零值。",
     "basePacingDelayMsPlaceholder": "留空 = 默认 0 毫秒",
     "basePacingDelayMsAuto": "默认（{{value}} 毫秒）：限流由系统自动管理。",
     "basePacingDelayMsZero": "0 毫秒（默认）：限流通过自适应节流和重试逻辑自动管理。",

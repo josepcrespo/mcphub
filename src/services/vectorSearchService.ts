@@ -773,9 +773,9 @@ async function generateEmbedding(text: string): Promise<number[]> {
     input: truncatedText,
   } as const;
 
-  const debugCurl = buildEmbeddingsDebugCurl(config.baseURL, embeddingPayload);
-
   if (process.env.DEBUG === 'true') {
+    const debugCurl = buildEmbeddingsDebugCurl(config.baseURL, embeddingPayload);
+
     console.log(
       `[Embedding] HTTP request details: ${JSON.stringify(
         {

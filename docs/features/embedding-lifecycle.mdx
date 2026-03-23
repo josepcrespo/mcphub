@@ -358,7 +358,6 @@ Without the shared queue, two parallel sync operations could both wait for the s
 
 Pacing controls the baseline rate of new calls. Retries handle transient failures after a call has already been attempted. MCPHub keeps both mechanisms because provider rate limits and upstream instability are related but not identical problems.
 
-Rate-limit-aware retry strategy is implemented on top of pacing: when a rate limit (403/429) is detected, the retry logic checks for `Retry-After` headers and applies them immediately, or uses a 62-second fallback on that retry. If a later retry is rate-limited again, MCPHub applies the same rule again. This allows retries to respect the exact window timing that the server demands, while pacing ensures that the baseline request rate stays sustainable across all operations.
 Rate-limit-aware retry strategy is implemented on top of pacing: when a rate limit (403/429) is detected, the retry logic checks for `Retry-After` headers and applies them immediately, or uses a 63-second fallback on that retry. If a later retry is rate-limited again, MCPHub applies the same rule again. This allows retries to respect the exact window timing that the server demands, while pacing ensures that the baseline request rate stays sustainable across all operations.
 
 ### Why Different Retry Strategies per Error Type

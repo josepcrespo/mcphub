@@ -643,7 +643,7 @@
     "openaiApiEmbeddingModel": "Nom du modèle d'intégration",
     "openaiApiEmbeddingModelPlaceholder": "text-embedding-3-small",
     "basePacingDelayMs": "Délai de pacing de base (ms)",
-    "basePacingDelayMsDescription": "Délai de base entre les requêtes d'embeddings envoyées au fournisseur. Par défaut 0 — le système gère les limites de débit automatiquement : il respecte les en-têtes Retry-After, applique un délai de 62 secondes en l'absence d'en-tête, et augmente le pacing après chaque réponse 403/429. Définissez une valeur non nulle uniquement si votre fournisseur impose un intervalle minimum fixe.",
+    "basePacingDelayMsDescription": "Délai de base entre les requêtes d'embeddings envoyées au fournisseur. Par défaut 0 — le système gère les limites de débit automatiquement : il respecte les en-têtes Retry-After, applique un délai de 63 secondes en l'absence d'en-tête, et augmente le pacing après chaque réponse 403/429. Définissez une valeur non nulle uniquement si votre fournisseur impose un intervalle minimum fixe.",
     "basePacingDelayMsPlaceholder": "Vide = valeur par défaut 0 ms",
     "basePacingDelayMsAuto": "Par défaut ({{value}} ms) : la gestion des limites de débit est automatique.",
     "basePacingDelayMsZero": "0 ms (par défaut) : la gestion des limites de débit est automatique via throttling adaptatif et logique de retry.",

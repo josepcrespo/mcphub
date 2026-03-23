@@ -80,7 +80,17 @@ class LogStreamManager {
 
     try {
       const url = getApiUrl(`/logs/stream?token=${token}`);
-      console.log('[LogStreamManager] Opening EventSource:', url);
+
+      let redactedUrl = url;
+      try {
+        const parsedUrl = new URL(url);
+        parsedUrl.search = '';
+        redactedUrl = parsedUrl.toString();
+      } catch {
+        redactedUrl = url.split('?')[0] || url;
+      }
+
+      console.log('[LogStreamManager] Opening EventSource:', redactedUrl);
       this.eventSource = new EventSource(url);
 
       this.eventSource.onmessage = (event) => {
