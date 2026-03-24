@@ -12,7 +12,7 @@
   "navigation": {
     "tabs": [
       {
-        "tab": "English",
+        "tab": "User Docs",
         "groups": [
           {
             "group": "Get Started",
@@ -45,7 +45,7 @@
         ]
       },
       {
-        "tab": "中文",
+        "tab": "用户文档",
         "groups": [
           {
             "group": "开始使用",
