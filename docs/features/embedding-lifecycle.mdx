@@ -294,6 +294,16 @@ For tool indexing, each successful embedding is persisted together with:
 
 The persistence step happens after the embedding vector has been produced. The database write itself is not part of the provider queue.
 
+### Two-Phase Memory-First Sync (Tool Indexing)
+
+To avoid database connection timeouts and improve UI progress reporting, tool indexing now runs as a two-phase process:
+
+- Phase 1 — Generate in memory: MCPHub sequentially generates embeddings for all tools for a given server and model, keeping results in memory. Progress events are emitted during this phase so the UI updates incrementally while long-running provider calls are in progress.
+- Phase 2 — Persist to DB: After all embeddings are generated, MCPHub probes the database connection, performs a single dimension compatibility check, and then writes embeddings in a tight loop. Batching writes after generation prevents idle DB connections from staling during long provider waits.
+
+Additionally, a skip-check optimization avoids unnecessary re-generation: before Phase 1, MCPHub may count existing embeddings for the server+model and skip the entire sync when the stored count matches the number of known tools.
+
+
 ### Dimension Validation and Schema Management
 
 Before persisting the first tool embedding of a server sync, MCPHub validates that the database vector column can store the generated vector length.
