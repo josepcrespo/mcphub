@@ -189,6 +189,31 @@ export class VectorEmbeddingRepository extends BaseRepository<VectorEmbedding> {
   }
 
   /**
+   * Return tool embedding identities for a specific server and model.
+   * Used by skip-check logic to verify exact tool IDs and tool-set hash.
+   */
+  async getToolIdentityByServerNameAndModel(
+    serverName: string,
+    model: string,
+  ): Promise<Array<{ contentId: string; toolSetHash?: string }>> {
+    const rows = await this.repository
+      .createQueryBuilder('ve')
+      .select(['ve.content_id', 've.metadata'])
+      .where('ve.content_type = :ct', { ct: 'tool' })
+      .andWhere('ve.content_id LIKE :prefix', { prefix: `${serverName}:%` })
+      .andWhere('ve.model = :model', { model })
+      .getMany();
+
+    return rows.map((row) => ({
+      contentId: row.content_id,
+      toolSetHash:
+        row.metadata && typeof row.metadata === 'object'
+          ? (row.metadata as Record<string, unknown>).toolSetHash?.toString()
+          : undefined,
+    }));
+  }
+
+  /**
    * Delete tool embeddings for a specific server
    * @param serverName Server name
    * @returns Number of deleted embeddings

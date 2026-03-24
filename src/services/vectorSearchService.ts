@@ -11,6 +11,7 @@ import {
 } from '../utils/tokenTruncation.js';
 import { safeStringify } from '../utils/serialization.js';
 import logService from './logService.js';
+import { createHash } from 'node:crypto';
 import OpenAI from 'openai';
 import axios from 'axios';
 
@@ -957,6 +958,39 @@ function generateFallbackEmbedding(text: string): number[] {
   return vector;
 }
 
+const stableHashSerialize = (value: unknown): string => {
+  if (value === null || value === undefined) {
+    return JSON.stringify(value);
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableHashSerialize(item)).join(',')}]`;
+  }
+
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+      a.localeCompare(b),
+    );
+    return `{${entries
+      .map(([key, val]) => `${JSON.stringify(key)}:${stableHashSerialize(val)}`)
+      .join(',')}}`;
+  }
+
+  return JSON.stringify(value);
+};
+
+const buildToolSetHash = (tools: Tool[]): string => {
+  const normalized = tools
+    .map((tool) => ({
+      name: tool.name || '',
+      description: tool.description || '',
+      inputSchema: tool.inputSchema || null,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  return createHash('sha256').update(stableHashSerialize(normalized)).digest('hex');
+};
+
 /**
  * Save tool information as vector embeddings
  *
@@ -979,6 +1013,22 @@ export const saveToolsAsVectorEmbeddings = async (
     reportProgress?: boolean;
   } = {},
 ): Promise<void> => {
+  const shouldReport = options.reportProgress === true;
+  let progressErrorEmitted = false;
+  let lastProgressCurrent = 0;
+
+  const emitProgress = (current: number, status: 'started' | 'in_progress' | 'completed' | 'error') => {
+    if (!shouldReport) return;
+    lastProgressCurrent = current;
+    if (status === 'error') {
+      progressErrorEmitted = true;
+    }
+    logService.emitStreamEvent({
+      type: 'embedding-sync-progress',
+      progress: { serverName, current, total: tools.length, status },
+    });
+  };
+
   try {
     if (tools.length === 0) {
       console.warn('No tools to save as vector embeddings', { serverName });
@@ -1003,27 +1053,46 @@ export const saveToolsAsVectorEmbeddings = async (
         ? smartRoutingConfig.azureOpenaiEmbeddingModel || 'text-embedding-3-small'
         : config.embeddingModel;
 
+    const expectedContentIds = tools
+      .map((tool) => `${serverName}:${tool.name}`)
+      .sort((a, b) => a.localeCompare(b));
+    const expectedToolSetHash = buildToolSetHash(tools);
+
     // ── Skip check: avoid regenerating embeddings that are already up-to-date ──
-    // If the DB already contains exactly tools.length embeddings for this server
-    // produced with the current model, all tools are already indexed — skip.
-    // This prevents redundant API calls and DB writes on every server restart.
+    // Validate exact content IDs and a tool-set hash/version marker to avoid
+    // false positives when only counts match but the actual tool set changed.
+    // This is an optimization to skip the expensive embedding generation phase when
+    // nothing changed, which can save a lot of time for servers with many tools and
+    // slow embedding providers. It also prevents rewrites on every server restart.
     if (isDatabaseConnected()) {
       try {
         const skipCheckRepo = getRepositoryFactory(
           'vectorEmbeddings',
         )() as VectorEmbeddingRepository;
-        const existingCount = await skipCheckRepo.countByServerNameAndModel(
+        const existingIdentities = await skipCheckRepo.getToolIdentityByServerNameAndModel(
           serverName,
           persistedEmbeddingModel,
         );
-        if (existingCount === tools.length) {
+
+        const existingContentIds = existingIdentities
+          .map((item) => item.contentId)
+          .sort((a, b) => a.localeCompare(b));
+        const hasExactContentIds =
+          existingContentIds.length === expectedContentIds.length &&
+          existingContentIds.every((contentId, idx) => contentId === expectedContentIds[idx]);
+        const hasMatchingToolSetHash =
+          existingIdentities.length > 0 &&
+          existingIdentities.every((item) => item.toolSetHash === expectedToolSetHash);
+
+        if (hasExactContentIds && hasMatchingToolSetHash) {
           console.log(
-            `[Embedding] [${serverName}] Skipping — all ${tools.length} tools already have up-to-date embeddings (model=${persistedEmbeddingModel})`,
+            `[Embedding] [${serverName}] Skipping — tool set already up-to-date (model=${persistedEmbeddingModel}, hash=${expectedToolSetHash.substring(0, 12)})`,
           );
           return;
         }
+
         console.log(
-          `[Embedding] [${serverName}] Generating embeddings: existing=${existingCount}, expected=${tools.length} (model=${persistedEmbeddingModel})`,
+          `[Embedding] [${serverName}] Generating embeddings: existing=${existingIdentities.length}, expected=${tools.length} (model=${persistedEmbeddingModel}, hash=${expectedToolSetHash.substring(0, 12)})`,
         );
       } catch (skipCheckError: any) {
         console.warn(
@@ -1044,15 +1113,6 @@ export const saveToolsAsVectorEmbeddings = async (
     }> = [];
 
     let vectorDimensionsReset = false;
-
-    const shouldReport = options.reportProgress === true;
-    const emitProgress = (current: number, status: 'started' | 'in_progress' | 'completed' | 'error') => {
-      if (!shouldReport) return;
-      logService.emitStreamEvent({
-        type: 'embedding-sync-progress',
-        progress: { serverName, current, total: tools.length, status },
-      });
-    };
 
     emitProgress(0, 'started');
 
@@ -1136,6 +1196,7 @@ export const saveToolsAsVectorEmbeddings = async (
           toolName: tool.name,
           description: tool.description,
           inputSchema: tool.inputSchema,
+          toolSetHash: expectedToolSetHash,
         },
         persistedEmbeddingModel,
       );
@@ -1151,6 +1212,9 @@ export const saveToolsAsVectorEmbeddings = async (
 
     console.log('Saved tool embeddings', safeStringify({ serverName, toolCount: tools.length }));
   } catch (error) {
+    if (shouldReport && !progressErrorEmitted) {
+      emitProgress(lastProgressCurrent, 'error');
+    }
     console.error('Error saving tool embeddings', safeStringify({ serverName, error }));
     throw error;
   }
