@@ -1,7 +1,7 @@
 import { getRepositoryFactory } from '../db/index.js';
 import { VectorEmbeddingRepository } from '../db/repositories/index.js';
 import { Tool } from '../types/index.js';
-import { getAppDataSource, isDatabaseConnected, initializeDatabase } from '../db/connection.js';
+import { getAppDataSource, isDatabaseConnected, initializeDatabase, reconnectDatabase } from '../db/connection.js';
 import { getSmartRoutingConfig, type SmartRoutingConfig } from '../utils/smartRouting.js';
 import { toFloat32Array } from '../utils/base64.js';
 import {
@@ -959,6 +959,16 @@ function generateFallbackEmbedding(text: string): number[] {
 
 /**
  * Save tool information as vector embeddings
+ *
+ * Uses a two-phase approach to prevent DB connection staleness:
+ *   Phase 1 — Generate all embeddings in memory (no DB access). For servers with many
+ *             tools and slow/unavailable embedding providers (e.g. BAAI/bge-m3 behind
+ *             a restricted network), this phase can take 10-60 s. Keeping DB operations
+ *             out of this phase avoids exhausting connection-pool idle timeouts.
+ *   Phase 2 — Verify the connection is still alive with a lightweight SELECT 1, reconnect
+ *             if necessary, call checkDatabaseVectorDimensions exactly ONCE (not once per
+ *             tool), and then persist all embeddings in a tight write loop.
+ *
  * @param serverName Server name
  * @param tools Array of tools to save
  */
@@ -980,7 +990,7 @@ export const saveToolsAsVectorEmbeddings = async (
       return;
     }
 
-    // Ensure database is initialized before using repository
+    // Ensure database is initialized before starting
     if (!isDatabaseConnected()) {
       console.log('Database not initialized, initializing...');
       await initializeDatabase();
@@ -992,11 +1002,47 @@ export const saveToolsAsVectorEmbeddings = async (
       embeddingProvider === 'azure_openai'
         ? smartRoutingConfig.azureOpenaiEmbeddingModel || 'text-embedding-3-small'
         : config.embeddingModel;
-    const vectorRepository = getRepositoryFactory(
-      'vectorEmbeddings',
-    )() as VectorEmbeddingRepository;
 
-    let hasCheckedVectorDimensions = false;
+    // ── Skip check: avoid regenerating embeddings that are already up-to-date ──
+    // If the DB already contains exactly tools.length embeddings for this server
+    // produced with the current model, all tools are already indexed — skip.
+    // This prevents redundant API calls and DB writes on every server restart.
+    if (isDatabaseConnected()) {
+      try {
+        const skipCheckRepo = getRepositoryFactory(
+          'vectorEmbeddings',
+        )() as VectorEmbeddingRepository;
+        const existingCount = await skipCheckRepo.countByServerNameAndModel(
+          serverName,
+          persistedEmbeddingModel,
+        );
+        if (existingCount === tools.length) {
+          console.log(
+            `[Embedding] [${serverName}] Skipping — all ${tools.length} tools already have up-to-date embeddings (model=${persistedEmbeddingModel})`,
+          );
+          return;
+        }
+        console.log(
+          `[Embedding] [${serverName}] Generating embeddings: existing=${existingCount}, expected=${tools.length} (model=${persistedEmbeddingModel})`,
+        );
+      } catch (skipCheckError: any) {
+        console.warn(
+          `[Embedding] [${serverName}] Skip check failed, proceeding with full sync: ${skipCheckError?.message ?? skipCheckError}`,
+        );
+      }
+    }
+
+    // ── Phase 1: Generate all embeddings in memory (no DB access) ──────────────
+    // This can take a significant amount of time for servers with many tools and
+    // slow or unreachable embedding providers. Performing DB writes here would
+    // interleave long network/compute waits with DB queries, risking connection
+    // pool staleness (empty driverError) on the subsequent writes.
+    const toolEmbeddings: Array<{
+      tool: Tool;
+      searchableText: string;
+      embedding: number[];
+    }> = [];
+
     let vectorDimensionsReset = false;
 
     const shouldReport = options.reportProgress === true;
@@ -1036,30 +1082,9 @@ export const saveToolsAsVectorEmbeddings = async (
       );
 
       try {
-        // Generate embedding
         const embedding = await generateEmbedding(searchableText);
-
-        // Check database compatibility once per server sync.
-        if (!hasCheckedVectorDimensions) {
-          vectorDimensionsReset = await checkDatabaseVectorDimensions(embedding.length);
-          hasCheckedVectorDimensions = true;
-        }
-
-        // Save embedding
-        await vectorRepository.saveEmbedding(
-          'tool',
-          `${serverName}:${tool.name}`,
-          searchableText,
-          embedding,
-          {
-            serverName,
-            toolName: tool.name,
-            description: tool.description,
-            inputSchema: tool.inputSchema,
-          },
-          persistedEmbeddingModel, // Store the model based on the active embedding provider
-        );
-        emitProgress(_toolIdx + 1, _toolIdx + 1 === tools.length ? 'completed' : 'in_progress');
+        toolEmbeddings.push({ tool, searchableText, embedding });
+        emitProgress(_toolIdx + 1, 'in_progress');
       } catch (error: any) {
         const status = extractErrorStatus(error);
         const message = error instanceof Error ? error.message : String(error);
@@ -1070,6 +1095,51 @@ export const saveToolsAsVectorEmbeddings = async (
         emitProgress(_toolIdx, 'error');
         throw error;
       }
+    }
+
+    // ── Phase 2: Persist embeddings to DB ──────────────────────────────────────
+    // Probe the connection before writing; reconnect if it went stale during the
+    // (potentially long) embedding-generation phase above.
+    if (!isDatabaseConnected()) {
+      console.info('Database connection lost during embedding generation, reinitializing...');
+      await initializeDatabase();
+    } else {
+      try {
+        await getAppDataSource().query('SELECT 1');
+      } catch {
+        console.warn(
+          'DB connection stale after embedding generation for server %s — reconnecting...',
+          serverName,
+        );
+        await reconnectDatabase();
+      }
+    }
+
+    const vectorRepository = getRepositoryFactory(
+      'vectorEmbeddings',
+    )() as VectorEmbeddingRepository;
+
+    // Check DB vector dimensions exactly once for the whole batch (all embeddings
+    // produced by the same model always share the same dimension count).
+    if (toolEmbeddings.length > 0) {
+      vectorDimensionsReset = await checkDatabaseVectorDimensions(toolEmbeddings[0].embedding.length);
+    }
+
+    for (const [toolIdx, { tool, searchableText, embedding }] of toolEmbeddings.entries()) {
+      await vectorRepository.saveEmbedding(
+        'tool',
+        `${serverName}:${tool.name}`,
+        searchableText,
+        embedding,
+        {
+          serverName,
+          toolName: tool.name,
+          description: tool.description,
+          inputSchema: tool.inputSchema,
+        },
+        persistedEmbeddingModel,
+      );
+      emitProgress(toolIdx + 1, toolIdx + 1 === toolEmbeddings.length ? 'completed' : 'in_progress');
     }
 
     if (vectorDimensionsReset) {
@@ -1530,7 +1600,10 @@ async function checkDatabaseVectorDimensions(dimensionsNeeded: number): Promise<
       }
 
       console.log('Successfully configured vector dimensions', { dimensionsNeeded });
-      return true;
+      // Only signal that a full resync is needed when existing data was cleared due
+      // to a real dimension change. When currentDimensions === 0 it is a first-time
+      // setup — there are no stale embeddings to re-generate.
+      return currentDimensions !== 0;
     }
 
     return false;

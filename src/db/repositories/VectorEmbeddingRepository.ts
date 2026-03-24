@@ -173,6 +173,22 @@ export class VectorEmbeddingRepository extends BaseRepository<VectorEmbedding> {
   }
 
   /**
+   * Count tool embeddings for a specific server that were generated with a given model.
+   * Used to determine whether embeddings are already up-to-date before regenerating.
+   * @param serverName Server name
+   * @param model Embedding model identifier
+   * @returns Number of matching embeddings
+   */
+  async countByServerNameAndModel(serverName: string, model: string): Promise<number> {
+    return this.repository
+      .createQueryBuilder('ve')
+      .where('ve.content_type = :ct', { ct: 'tool' })
+      .andWhere('ve.content_id LIKE :prefix', { prefix: `${serverName}:%` })
+      .andWhere('ve.model = :model', { model })
+      .getCount();
+  }
+
+  /**
    * Delete tool embeddings for a specific server
    * @param serverName Server name
    * @returns Number of deleted embeddings
