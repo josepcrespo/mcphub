@@ -76,11 +76,19 @@ const Toast: React.FC<ToastProps> = ({
     warning: 'text-yellow-800',
   };
 
+  const accentBorders = {
+    success: 'border-l-4 border-l-green-500',
+    error: 'border-l-4 border-l-red-600',
+    info: 'border-l-4 border-l-blue-500',
+    warning: 'border-l-4 border-l-yellow-500',
+  };
+
   return (
     <div
       className={cn(
         'fixed top-4 right-4 z-50 max-w-sm p-4 rounded-md shadow-lg border',
         bgColors[type],
+        accentBorders[type],
         'transform transition-all duration-300 ease-in-out',
         visible ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0',
       )}
