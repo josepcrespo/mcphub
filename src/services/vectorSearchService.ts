@@ -1069,31 +1069,42 @@ export const saveToolsAsVectorEmbeddings = async (
         const skipCheckRepo = getRepositoryFactory(
           'vectorEmbeddings',
         )() as VectorEmbeddingRepository;
-        const existingIdentities = await skipCheckRepo.getToolIdentityByServerNameAndModel(
+        const existingCount = await skipCheckRepo.countByServerNameAndModel(
           serverName,
           persistedEmbeddingModel,
         );
 
-        const existingContentIds = existingIdentities
-          .map((item) => item.contentId)
-          .sort((a, b) => a.localeCompare(b));
-        const hasExactContentIds =
-          existingContentIds.length === expectedContentIds.length &&
-          existingContentIds.every((contentId, idx) => contentId === expectedContentIds[idx]);
-        const hasMatchingToolSetHash =
-          existingIdentities.length > 0 &&
-          existingIdentities.every((item) => item.toolSetHash === expectedToolSetHash);
-
-        if (hasExactContentIds && hasMatchingToolSetHash) {
+        if (existingCount !== tools.length) {
           console.log(
-            `[Embedding] [${serverName}] Skipping — tool set already up-to-date (model=${persistedEmbeddingModel}, hash=${expectedToolSetHash.substring(0, 12)})`,
+            `[Embedding] [${serverName}] Generating embeddings: existing=${existingCount}, expected=${tools.length} (model=${persistedEmbeddingModel}, hash=${expectedToolSetHash.substring(0, 12)})`,
           );
-          return;
-        }
+        } else {
+          const existingIdentities = await skipCheckRepo.getToolIdentityByServerNameAndModel(
+            serverName,
+            persistedEmbeddingModel,
+          );
 
-        console.log(
-          `[Embedding] [${serverName}] Generating embeddings: existing=${existingIdentities.length}, expected=${tools.length} (model=${persistedEmbeddingModel}, hash=${expectedToolSetHash.substring(0, 12)})`,
-        );
+          const existingContentIds = existingIdentities
+            .map((item) => item.contentId)
+            .sort((a, b) => a.localeCompare(b));
+          const hasExactContentIds =
+            existingContentIds.length === expectedContentIds.length &&
+            existingContentIds.every((contentId, idx) => contentId === expectedContentIds[idx]);
+          const hasMatchingToolSetHash =
+            existingIdentities.length > 0 &&
+            existingIdentities.every((item) => item.toolSetHash === expectedToolSetHash);
+
+          if (hasExactContentIds && hasMatchingToolSetHash) {
+            console.log(
+              `[Embedding] [${serverName}] Skipping — tool set already up-to-date (model=${persistedEmbeddingModel}, hash=${expectedToolSetHash.substring(0, 12)})`,
+            );
+            return;
+          }
+
+          console.log(
+            `[Embedding] [${serverName}] Generating embeddings: existing=${existingCount}, expected=${tools.length} (model=${persistedEmbeddingModel}, hash=${expectedToolSetHash.substring(0, 12)})`,
+          );
+        }
       } catch (skipCheckError: any) {
         console.warn(
           `[Embedding] [${serverName}] Skip check failed, proceeding with full sync: ${skipCheckError?.message ?? skipCheckError}`,

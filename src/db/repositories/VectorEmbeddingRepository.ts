@@ -2,6 +2,11 @@ import { VectorEmbedding } from '../entities/VectorEmbedding.js';
 import BaseRepository from './BaseRepository.js';
 import { getAppDataSource } from '../connection.js';
 
+// Escape special characters for SQL LIKE patterns.
+// This is used in methods that filter by content_id with a prefix,
+// to ensure that server names with special characters don't break the query.
+const escapeLikePattern = (value: string): string => value.replace(/([\\%_])/g, '\\$1');
+
 export class VectorEmbeddingRepository extends BaseRepository<VectorEmbedding> {
   constructor() {
     super(VectorEmbedding);
@@ -180,10 +185,12 @@ export class VectorEmbeddingRepository extends BaseRepository<VectorEmbedding> {
    * @returns Number of matching embeddings
    */
   async countByServerNameAndModel(serverName: string, model: string): Promise<number> {
+    const prefix = `${escapeLikePattern(serverName)}:%`;
+
     return this.repository
       .createQueryBuilder('ve')
       .where('ve.content_type = :ct', { ct: 'tool' })
-      .andWhere('ve.content_id LIKE :prefix', { prefix: `${serverName}:%` })
+      .andWhere("ve.content_id LIKE :prefix ESCAPE '\\'", { prefix })
       .andWhere('ve.model = :model', { model })
       .getCount();
   }
@@ -196,11 +203,13 @@ export class VectorEmbeddingRepository extends BaseRepository<VectorEmbedding> {
     serverName: string,
     model: string,
   ): Promise<Array<{ contentId: string; toolSetHash?: string }>> {
+    const prefix = `${escapeLikePattern(serverName)}:%`;
+
     const rows = await this.repository
       .createQueryBuilder('ve')
       .select(['ve.content_id', 've.metadata'])
       .where('ve.content_type = :ct', { ct: 'tool' })
-      .andWhere('ve.content_id LIKE :prefix', { prefix: `${serverName}:%` })
+      .andWhere("ve.content_id LIKE :prefix ESCAPE '\\'", { prefix })
       .andWhere('ve.model = :model', { model })
       .getMany();
 
@@ -220,12 +229,14 @@ export class VectorEmbeddingRepository extends BaseRepository<VectorEmbedding> {
    */
   async deleteByServerName(serverName: string): Promise<number> {
     try {
+      const prefix = `${escapeLikePattern(serverName)}:%`;
+
       const result = await this.repository
         .createQueryBuilder()
         .delete()
         .from(VectorEmbedding)
         .where('content_type = :contentType', { contentType: 'tool' })
-        .andWhere('content_id LIKE :prefix', { prefix: `${serverName}:%` })
+        .andWhere("content_id LIKE :prefix ESCAPE '\\'", { prefix })
         .execute();
 
       return result.affected || 0;

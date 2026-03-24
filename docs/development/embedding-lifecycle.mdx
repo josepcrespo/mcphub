@@ -301,7 +301,19 @@ To avoid database connection timeouts and improve UI progress reporting, tool in
 - Phase 1 — Generate in memory: MCPHub sequentially generates embeddings for all tools for a given server and model, keeping results in memory. Progress events are emitted during this phase so the UI updates incrementally while long-running provider calls are in progress.
 - Phase 2 — Persist to DB: After all embeddings are generated, MCPHub probes the database connection, performs a single dimension compatibility check, and then writes embeddings in a tight loop. Batching writes after generation prevents idle DB connections from staling during long provider waits.
 
-Additionally, a skip-check optimization avoids unnecessary re-generation: before Phase 1, MCPHub may count existing embeddings for the server+model and skip the entire sync when the stored count matches the number of known tools.
+Additionally, a skip-check optimization avoids unnecessary re-generation. Before Phase 1, MCPHub:
+
+- Counts existing embeddings for the exact server prefix and model as a cheap pre-check.
+- Only if that count matches the current number of tools, loads the stored tool identities and compares them against the expected content IDs.
+- Verifies a deterministic tool-set hash stored in embedding metadata. The hash is derived from the current tool list (name, description, and input schema) so equal counts alone do not cause a false skip.
+
+Only when both the exact content IDs and the stored tool-set hash match does MCPHub skip regeneration.
+
+Progress reporting is also intentionally asymmetric across the two phases:
+
+- Phase 1 emits incremental `in_progress` updates for each generated tool.
+- Phase 2 does not emit per-tool persistence progress; it emits a single `completed` event after all embeddings have been saved.
+- If either phase fails, MCPHub emits an `error` progress event before propagating the failure so the UI does not remain stuck in an in-progress state.
 
 
 ### Dimension Validation and Schema Management
@@ -340,6 +352,8 @@ MCPHub chooses an index strategy based on vector size:
 - More than 4000 dimensions: no optimized vector index is created.
 
 If the dimensions change during a server sync, MCPHub schedules a full resynchronization so that all existing tool embeddings are regenerated consistently under the new schema.
+
+When the database has no prior vector dimensions configured, MCPHub treats that as first-time setup. In that case it updates the schema but does not schedule a full resynchronization, because there is no incompatible historical data to regenerate.
 
 ## Full Resynchronization Behavior
 
