@@ -305,9 +305,12 @@ Additionally, a skip-check optimization avoids unnecessary re-generation. Before
 
 - Counts existing embeddings for the exact server prefix and model as a cheap pre-check.
 - Only if that count matches the current number of tools, loads the stored tool identities and compares them against the expected content IDs.
-- Verifies a deterministic tool-set hash stored in embedding metadata. The hash is derived from the current tool list (name, description, and input schema) so equal counts alone do not cause a false skip.
+- Verifies a deterministic tool-set hash stored in embedding metadata for every retrieved row. The hash is derived from the current tool list (name, description, and input schema) so equal counts alone do not cause a false skip.
 
-Only when both the exact content IDs and the stored tool-set hash match does MCPHub skip regeneration.
+Only when both conditions hold does MCPHub skip regeneration:
+
+- Exact content ID set match (same IDs, same cardinality).
+- Every retrieved row carries a `toolSetHash` equal to the expected hash for the current tool list.
 
 Progress reporting is also intentionally asymmetric across the two phases:
 
