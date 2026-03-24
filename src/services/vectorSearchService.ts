@@ -1125,7 +1125,7 @@ export const saveToolsAsVectorEmbeddings = async (
       vectorDimensionsReset = await checkDatabaseVectorDimensions(toolEmbeddings[0].embedding.length);
     }
 
-    for (const [toolIdx, { tool, searchableText, embedding }] of toolEmbeddings.entries()) {
+    for (const { tool, searchableText, embedding } of toolEmbeddings) {
       await vectorRepository.saveEmbedding(
         'tool',
         `${serverName}:${tool.name}`,
@@ -1139,8 +1139,9 @@ export const saveToolsAsVectorEmbeddings = async (
         },
         persistedEmbeddingModel,
       );
-      emitProgress(toolIdx + 1, toolIdx + 1 === toolEmbeddings.length ? 'completed' : 'in_progress');
     }
+
+    emitProgress(toolEmbeddings.length, 'completed');
 
     if (vectorDimensionsReset) {
       scheduleFullEmbeddingResync(
